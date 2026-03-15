@@ -2,8 +2,18 @@
 
 #include <cocos2d.h>
 
-class DS_Dictionary {
+class DS_Dictionary : public cocos2d::CCSprite {
 public:
-    int getIntegerForKey(const char* key);
-    void setIntegerForKey(const char* key, int value);
+    DS_Dictionary();
+
+    std::string saveRootSubDictToString();
+    bool loadRootSubDictFromString(std::string);
+
+    void saveRootSubDictToFile(const char*);
+    void loadRootSubDictFromFile(const char*);
+
+#if GDPS == GDPS_NEOPOINTFOUR
+    void setIntegerForKey(const char*, int);
+    int getIntegerForKey(const char*);
+#endif
 };

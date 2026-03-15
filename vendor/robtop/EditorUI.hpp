@@ -25,7 +25,7 @@ public:
     CreateMenuItem* getCreateBtn(const char*, int);
 	void showDeleteConfirmation();
 	void toggleDuplicateButton();
-	void setFilterType();
+	void toggleFilter();
 	void createFilterBtn();
 	static EditorUI& sharedInstance();
 
@@ -34,12 +34,17 @@ public:
     CCMenuItemSpriteExtra* getSpriteButton3(const char* name, SEL_MenuHandler callback, CCMenu* menu, float scale, float scale2);
     void moveObjectCall(CCNode* sender);
     void transformObjectCall(CCNode* sender);
+	void getObjectInfoCall(CCNode* sender);
     void moveObject(GameObject* obj, CCPoint transform);
     void editObject();
 	void deleteAll();
 	virtual bool ccTouchBegan(cocos2d::CCTouch *pTouch, cocos2d::CCEvent *pEvent);
     virtual void ccTouchMoved(cocos2d::CCTouch *pTouch, cocos2d::CCEvent *pEvent);
     virtual void ccTouchEnded(cocos2d::CCTouch *pTouch, cocos2d::CCEvent *pEvent);
+
+	void onPlay(CCObject*);
+    void stopMusic(CCObject*);
+	void playtest(CCObject*);
 
     void moveObjectCall2(CCNode* sender);
     void transformObjectCall2(CCNode* sender);

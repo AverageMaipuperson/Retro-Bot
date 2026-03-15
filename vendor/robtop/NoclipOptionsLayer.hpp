@@ -9,4 +9,5 @@ public:
 	void onClose(CCObject*);
 	bool init(CCLayer* referrer);
     void keyBackClicked();
+	void onNoclipTintOptions(CCObject* sender);
 };

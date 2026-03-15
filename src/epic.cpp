@@ -1,20 +1,42 @@
 #include "../vendor/cocos/cocos2dx/include/cocos2d.h"
 #include "../vendor/cocos/CocosDenshion/include/SimpleAudioEngine.h"
 #include <iostream>
+#include <iomanip>
 #include <string>
+#include <fstream>
 #include "../vendor/other/hooking.h"
 #include "../vendor/cocos/cocos2dx/platform/CCPlatformMacros.h"
-// #include "../vendor/robtop/GJGameLevel.hpp"
+#include "../vendor/robtop/GJGameLevel.hpp"
+#include "../vendor/robtop/EditButtonBar.hpp"
 #include "../vendor/robtop/CCMenuItemToggler.hpp"
 #include "../vendor/robtop/FPSCounter.hpp"
 #include "../vendor/robtop/OptionsLayer.hpp"
+#include "../vendor/robtop/MyLevelsLayer.hpp"
 #include "../vendor/robtop/FLAlertLayer.hpp"
 #include "../vendor/robtop/GameManager.hpp"
 #include "../vendor/robtop/CCMenuItemSpriteExtra.hpp"
+#include "../vendor/robtop/LevelSettingsLayer.hpp"
+#include "../vendor/other/levels.h"
+#include "../vendor/robtop/ObjectInfoHandler.hpp"
 #include "../vendor/robtop/ButtonSprite.hpp"
+#include "../vendor/robtop/PlaytestLayer.hpp"
+#include "../vendor/robtop/AppDelegate.hpp"
+#include "../vendor/robtop/VersionRequest.hpp"
+#include "../vendor/robtop/HitboxLayer.hpp"
+#include "../vendor/robtop/CustomSongLayer.hpp"
+#include "../vendor/robtop/EditLevelLayer.hpp"
+#include "../vendor/robtop/LocalLevelManager.hpp"
+#include "../vendor/robtop/LevelBrowserLayer.hpp"
+#include "../vendor/robtop/CustomLabelOptionsLayer.hpp"
 #include "../vendor/robtop/MenuLayer.hpp"
 #include "platform/android/jni/JniHelper.h"
+#include "cocos2dExt.h"
+#include "../vendor/cocos/cocos2dx/extensions/network/HttpClient.h"
+#include "../vendor/cocos/cocos2dx/extensions/network/HttpRequest.h"
+#include "../vendor/cocos/cocos2dx/extensions/network/HttpResponse.h"
 #include <typeinfo>
+#include "../vendor/robtop/CustomSongLayer.hpp"
+#include <atomic>
 #include <jni.h>
 #include <cmath>
 #include <map>
@@ -23,6 +45,7 @@
 #include <ctime>
 #include <random>
 #include <utility>
+#include <new>
 #include "../vendor/robtop/NoclipOptionsLayer.hpp"
 #include "../vendor/robtop/SpeedhackOptionsLayer.hpp"
 #include "../vendor/robtop/LevelInfoLayer.hpp"
@@ -32,7 +55,8 @@
 #include "../vendor/robtop/LevelEditorLayer.hpp"
 #include "../vendor/robtop/CoderLayer.hpp"
 #include "../vendor/robtop/CreatorLayer.hpp"
-#include "../vendor/robtop/GJGameLevel.hpp"
+#include "../vendor/robtop/PivotMenuLayer.hpp"
+// #include "../vendor/robtop/GJGameLevel.hpp"
 #include "../vendor/robtop/EditorUI.hpp"
 #include "../vendor/robtop/EditorConfigurationsLayer.hpp"
 #include "../vendor/robtop/GJComment.hpp"
@@ -41,14 +65,31 @@
 #include "../vendor/cocos/cocos2dx/cocoa/CCDictionary.cpp"
 #include "../vendor/cocos/cocos2dx/cocoa/CCString.h"
 #include "../vendor/cocos/cocos2dx/cocoa/CCString.cpp"
+#include "MemoryPatch.h"
+#include <thread>
+#include "../vendor/robtop/HidePauseLayer.hpp"
+#include "fmod.h"
+#include "fmod.hpp"
+#include "fmod_android.h"
+#include "minibpm/src/MiniBpm.h"
+#include <sys/stat.h>
+#include <signal.h>
+#include <ctime>
+#include <sstream>
+#include <chrono>
 
-#define PAGE_1 = 743276
-#define PAGE_2 = 743277
+#define PAGE_1 743276
+#define PAGE_2 743277
+#define CURRENT_VERSION 15
 using namespace cocos2d;
+using namespace cocos2d::extension;
 
 #define MEMBER_BY_OFFSET(type, var, offset) \
     (*reinterpret_cast<type*>(reinterpret_cast<uintptr_t>(var) + static_cast<uintptr_t>(offset)))
 
+static GJGameLevel* g_currentExportLevel;
+static GJGameLevel* g_importedLevel = nullptr;
+static PlayerObject* g_player = nullptr;
 bool noclip = false;
 bool extraLayerCreated = false;
 bool elc = false;
@@ -78,14 +119,287 @@ bool iconHack = false;
 bool speedhack = false;
 int lastDeadFrame = 0;
 int frameCount = 0;
+bool noRotation = false;
+bool noRespawn = false;
+bool noRespawnReset = false;
+bool pauseLayerVisible = true;
+bool hidePauseMenu = false;
+bool deleteAll = false;
+bool levelLength = false;
+float musicVolume = 1.0f;
+CCLayer* menulayer = nullptr;
+bool moreEditorButtons = false;
 cocos2d::CCLabelBMFont* deathsLabel;
+CCLabelBMFont* updateLabel;
+bool warnedOutdated = false;
+bool showSong = false;
+bool showEpic = false;
+int clicks = 0;
+std::vector<float> clickTimestamps;
+bool hasShowedAlert = false;
+bool instantFlip = false;
+bool dontShowAlert = false;
+bool destroyAllOpps = false;
+bool extendEditor = false;
+bool exitButton = false;
+bool hideVault = false;
+bool noSceneTransition = false;
+bool editorHitbox = false;
+bool playerControl = false;
+bool playback = false;
 
 static JavaVM* g_vm = nullptr;
+static bool g_playback = false;
+static float g_lineX = 0.0f;
+static CCNode* g_gameLayer = nullptr;
+static CCMenuItemSpriteExtra* g_playBtn = nullptr;
+static CCMenuItemSpriteExtra* g_stopBtn = nullptr;
 
-bool ExtraLayer::m_deaths = false;
 bool ExtraLayer::m_flash = false;
 float ExtraLayer::m_speedhack = 1.0f;
 bool ExtraLayer::m_speedhackEnabled = false;
+int ExtraLayer::m_currentPage = 1;
+CCLayer* ExtraLayer::m_page1 = nullptr;
+CCLayer* ExtraLayer::m_page2 = nullptr;
+CCLayer* ExtraLayer::m_page3 = nullptr;
+CCLayer* ExtraLayer::m_page4 = nullptr;
+CCLayer* ExtraLayer::m_page5 = nullptr;
+CCMenu* ExtraLayer::m_right = nullptr;
+CCMenu* ExtraLayer::m_left = nullptr;
+CCLayer* ExtraLayer::m_lel = nullptr;
+CCLayer* HidePauseLayer::m_pauseLayer = nullptr;
+MenuLayer* MenuLayer::sharedLayer = nullptr;
+CCLayer* ExtraLayer::m_self = nullptr;
+std::string ExtraLayer::m_customLabelValue = "Custom!";
+bool ExtraLayer::m_speedhackMusic = false;
+cocos2d::ccColor3B ExtraLayer::m_flashColor = {255, 0, 0};
+int datedVersion = 0;
+float lastSpeed = -1.0f; 
+bool ExtraLayer::uploadNotAllowed_ = false;
+
+bool fps_label = false;
+bool deaths_label = false;
+bool time_label = false;
+bool speedhack_label = false;
+bool clicks_label = false;
+bool cheat_label = false;
+bool cps_label = false;
+bool custom_label = false;
+
+std::string labelFPSDisplay = (char*)"";
+std::string labelDeathsDisplay = (char*)"";
+std::string labelTimeDisplay = (char*)"";
+std::string labelSpeedhackDisplay = (char*)"";
+std::string labelClicksDisplay = (char*)"";
+std::string labelCPSDisplay = (char*)"";
+std::string labelCustomDisplay = (char*)"";
+
+CCLabelBMFont* labelInfo = nullptr;
+
+static FMOD::System* fmodSystem = nullptr;
+static FMOD::Channel* bgmChannel = nullptr;
+static FMOD::Sound* bgmSound = nullptr;
+static std::map<std::string, FMOD::Sound*> sfxCache;
+static std::map<unsigned int, FMOD::Channel*> effectChannels;
+static unsigned int effectIdCounter = 0;
+static FMOD::Channel* sfxChannel = nullptr;
+static FMOD::Sound* sfxSound = nullptr; 
+static FMOD::Sound* cachedSound = nullptr;
+
+std::string currentSpecificVersion = "15.14";
+
+bool checked = false;
+std::atomic<char*> MenuLayer::s_newVersion;
+std::atomic<bool> MenuLayer::s_hasVersionData;
+
+MemoryPatch flipPatch;
+
+void* PivotMenuLayer::m_menuGame = nullptr;
+
+class MenuGameLayer : public CCLayer {
+public:
+void tryJump();
+};
+
+MenuGameLayer* menuGame = nullptr;
+
+bool (*MenuGameLayer_init)(MenuGameLayer*);
+bool MenuGameLayer_init_H(MenuGameLayer* self) {
+    MenuGameLayer_init(self);
+    CCLog("VIOLETPS: MenuGameLayer::init()");
+    menuGame = self;
+    return true;
+}
+
+bool PivotMenuLayer::init() {
+    this->setTouchEnabled(true); 
+    CCLog("VIOLETPS: PivotMenuLayer::init()");
+    return true;
+}
+
+/* class PlayerObject : public CCObject {
+public:
+void pushButton(int);
+void releaseButton(int);
+}; */
+
+typedef void (*t_playerBtnFunc)(void* playerInstance, int buttonID);
+
+void handlePlayerInput(void* player, int buttonID, bool isPush) {
+    static t_playerBtnFunc pPushBtn = nullptr;
+    static t_playerBtnFunc pReleaseBtn = nullptr;
+    
+    if (pPushBtn == nullptr || pReleaseBtn == nullptr) {
+        void* handle = dlopen("libgame.so", RTLD_LAZY);
+        if (handle) {
+            pPushBtn = (t_playerBtnFunc)dlsym(handle, "_ZN12PlayerObject10pushButtonE12PlayerButton");
+            pReleaseBtn = (t_playerBtnFunc)dlsym(handle, "_ZN12PlayerObject13releaseButtonE12PlayerButton");
+        }
+    }
+
+    if (player) {
+        if (isPush && pPushBtn) pPushBtn(player, buttonID);
+        else if (!isPush && pReleaseBtn) pReleaseBtn(player, buttonID);
+    }
+}
+
+typedef void (*t_playerDestroyed)(void* self);
+t_playerDestroyed pPlayerDestroyed = nullptr;
+
+void initDestroyedSymbol() {
+    void* handle = dlopen("libgame.so", RTLD_LAZY);
+    if (handle) {
+        pPlayerDestroyed = (t_playerDestroyed)dlsym(handle, "_ZN12PlayerObject15playerDestroyedEv");
+    }
+}
+
+void PivotMenuLayer::onFinished(CCObject* sender) {
+    cocos2d::CCNode* player = (cocos2d::CCNode*)*(void**)((char*)menuGame + 0x15c);
+    player->setPosition(ccp(0.0f, player->getPosition().y));
+    player->setVisible(true);
+}
+
+    bool PivotMenuLayer::ccTouchBegan(CCTouch *pTouch, CCEvent *pEvent) {
+    if(menuGame != nullptr) {
+        auto player = MEMBER_BY_OFFSET(PlayerObject*, menuGame, 0x15c);
+        if (player != nullptr) {
+            handlePlayerInput(player, 1, true);
+        }
+    }
+    return true;
+        initDestroyedSymbol();
+    if (menuGame != nullptr) {
+        cocos2d::CCNode* player = (cocos2d::CCNode*)*(void**)((char*)menuGame + 0x15c);
+        if (player != nullptr) {
+            CCPoint worldPoint = CCDirector::sharedDirector()->convertToGL(pTouch->locationInView());
+            CCPoint localPoint = player->convertToNodeSpace(worldPoint);
+            CCSize s = player->getContentSize();
+            float w = (s.width > 0) ? s.width : 30.0f;
+            float h = (s.height > 0) ? s.height : 30.0f;
+            CCRect localRect = CCRectMake(0, 0, w, h);
+
+            if (CCRect::CCRectContainsPoint(localRect, localPoint)) {
+                CCLog("VIOLETPS: Hit detected! Teleporting player to trigger respawn.");
+                pPlayerDestroyed(player);
+                CCPoint pos = player->getPosition();
+                CCDelayTime* delay = CCDelayTime::create(2.0f);
+    CCCallFuncO* teleport = CCCallFuncO::create(this, 
+        callfuncO_selector(PivotMenuLayer::onFinished), player);
+    auto seq = CCSequence::create(delay, teleport, NULL);
+    player->runAction(seq);
+                // player->setPosition(ccp(50000.0f, pos.y));        
+                return true; 
+            }
+        }
+    }
+    return true; 
+}
+
+void PivotMenuLayer::ccTouchEnded(CCTouch *pTouch, CCEvent *pEvent) {
+    if(menuGame != nullptr) {
+        void* player = *(void**)((char*)menuGame + 0x15c);
+        if (player != nullptr) {
+            handlePlayerInput(player, 1, false); 
+        }
+    }
+}
+
+void PivotMenuLayer::registerWithTouchDispatcher() {
+    CCDirector::sharedDirector()->getTouchDispatcher()->addTargetedDelegate(this, 0, true);
+}
+
+class PatchManager {
+private:
+    vector<MemoryPatch> patches;
+public:
+    void addPatch(const char *libraryName, uintptr_t address,std::string hex){
+        patches.push_back(MemoryPatch::createWithHex(libraryName,address,hex));
+    }
+
+    void Modify(){
+        for(int k = 0; k < patches.size(); k++){
+            patches[k].Modify();
+        }
+    }
+
+    void Restore(){
+        for(int k = 0; k < patches.size(); k++){
+            patches[k].Restore();
+        }
+    }
+
+};
+PatchManager editorPatch;
+PatchManager iconPatch;
+PatchManager controlPatch;
+PatchManager playerObjectPatch;
+
+void onToggleFlip(bool enabled) {
+    if (enabled) {
+        flipPatch.Modify();
+    } else {
+        flipPatch.Restore();
+    }
+}
+
+void onToggleEditor(bool enabled) {
+    if (enabled) {
+        editorPatch.Modify();
+    } else {
+        editorPatch.Restore();
+    }
+}
+
+void onToggleIcon(bool enabled) {
+    if (enabled) {
+        iconPatch.Modify();
+    } else {
+        iconPatch.Restore();
+    }
+}
+
+void onToggleControl(bool enabled) {
+    if(enabled) {
+        controlPatch.Modify();
+    } else {
+        controlPatch.Restore();
+    }
+}
+
+void onTogglePlayerObject(bool enabled) {
+    if(enabled) {
+        playerObjectPatch.Modify();
+    } else {
+        playerObjectPatch.Restore();
+    }
+}
+
+template <typename T>
+std::string to_string(T value) {
+    std::ostringstream os;
+    os << value;
+    return os.str();
+}
 
 static JNIEnv* getEnv() {
   if (!g_vm) return nullptr;
@@ -99,6 +413,17 @@ static JNIEnv* getEnv() {
   return nullptr;
 }
 
+void changeAllChannelsPitch(float pitch) {
+  for (auto const& [id, channel] : effectChannels) {
+    bool isPlaying = false;
+    channel->isPlaying(&isPlaying);
+    if (isPlaying) {
+        channel->setPitch(1.5f);
+    }
+}
+bgmChannel->setPitch(pitch);
+}
+
 CCSprite* getToggleSprite(CCSprite* on, CCSprite* off, bool state) { return (state) ? on : off; }
 CCMenuItemSprite* getMenuToggleSprite(CCMenuItemSprite* on, CCMenuItemSprite* off, bool state) { return (state) ? on : off; }
 
@@ -107,6 +432,25 @@ int random_array_index(const T (&array)[size]) {
     int num = std::rand() % size; 
 
     return num;
+}
+
+std::string formatWithChar(const char* format, ...) {
+    char buffer[256];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    return std::string(buffer);
+}
+
+void openURL(const char* url) {
+    JniMethodInfo t;
+    if (JniHelper::getStaticMethodInfo(t, "org/cocos2dx/lib/Cocos2dxActivity", "openWebURL", "(Ljava/lang/String;)V")) {
+        jstring stringArg = t.env->NewStringUTF(url);
+        t.env->CallStaticVoidMethod(t.classID, t.methodID, stringArg);
+        t.env->DeleteLocalRef(stringArg);
+        t.env->DeleteLocalRef(t.classID);
+    }
 }
 
 void seekBackgroundMusicTo(int ms) {
@@ -210,6 +554,25 @@ std::string ToString(T val)
     return stream.str();
 }
 
+bool create_directories(const std::string& path) {
+    std::stringstream ss(path);
+    std::string item;
+    std::string current_path = "";
+
+    while (std::getline(ss, item, '/')) {
+        if (item.empty()) continue;
+        current_path += "/" + item;
+        if (mkdir(current_path.c_str(), S_IRWXU) != 0) {
+            if (errno != EEXIST) return false;
+        }
+    }
+    return true;
+}
+
+int random(int max) {
+    return std::rand() % max + 1;
+}
+
 int stoi(const std::string& s) {
     int result = 0;
     int multiplier = 1;
@@ -244,26 +607,36 @@ class SimpleAudioEngine {
   virtual ~SimpleAudioEngine() = default;
 };
 
-void PlayLayer::triggerRedPulse(float duration)
+using namespace std;
+
+#define cpatch(addr, val) addPatch("libgame.so", addr, val)
+
+void PlayLayer::triggerCustomPulse(float duration)
 {
+    cocos2d::ccColor3B selectedColor = ExtraLayer::m_flashColor;
     CCSize win_size = CCDirector::sharedDirector()->getWinSize();
-    CCLayerColor* redPulseLayer = CCLayerColor::create(ccc4(255, 0, 0, 255), win_size.width, win_size.height);
-    redPulseLayer->setOpacity(200);
-    redPulseLayer->setBlendFunc({GL_ONE, GL_ONE_MINUS_SRC_ALPHA});
-    redPulseLayer->setAnchorPoint(ccp(0, 0));
-    redPulseLayer->setPosition(ccp(0, 0));
-    this->addChild(redPulseLayer, 10);
+    CCLayerColor* pulseLayer = CCLayerColor::create(
+        ccc4(selectedColor.r, selectedColor.g, selectedColor.b, 80), 
+        win_size.width, 
+        win_size.height
+    );
+    pulseLayer->setOpacity(80);
+    pulseLayer->setBlendFunc({GL_ONE, GL_ONE_MINUS_SRC_ALPHA});
+    pulseLayer->setAnchorPoint(ccp(0, 0));
+    pulseLayer->setPosition(ccp(0, 0));
+    this->addChild(pulseLayer, 10);
     CCActionInterval* fadeOut = CCFadeOut::create(duration);
-    CCCallFunc* removeLayer = CCCallFunc::create(redPulseLayer, callfunc_selector(CCLayerColor::removeFromParentAndCleanup));
+    CCCallFunc* removeLayer = CCCallFunc::create(pulseLayer, callfunc_selector(CCNode::removeFromParentAndCleanup));
     auto sequence = CCSequence::create(fadeOut, removeLayer, NULL);
-    redPulseLayer->runAction(sequence);
+    pulseLayer->runAction(sequence);
 }
+
 
 void PlayLayer::pulseLabelRed(CCLabelBMFont* label, float duration)
 {
     ccColor3B originalColor = ccc3(255, 255, 255); 
     ccColor3B pulseColor = ccc3(255, 0, 0);
-    CCTintTo* tintToRed = CCTintTo::create(duration / 2.0f, pulseColor.r, pulseColor.g, pulseColor.b);
+    CCTintTo* tintToRed = CCTintTo::create(0.f, pulseColor.r, pulseColor.g, pulseColor.b);
     CCTintTo* tintToOriginal = CCTintTo::create(duration / 2.0f, originalColor.r, originalColor.g, originalColor.b);
     auto sequence = CCSequence::create(tintToRed, tintToOriginal, NULL);
     label->runAction(sequence);
@@ -299,9 +672,24 @@ char * LevelTools_getAudioTitle_H(int ID) {
     case 22: return "Rupture";
     case 23: return "Stalemate";
     case 24: return "Glorious Morning";
-    default: return "Unknown";
+    case 25: return "Chaoz Fantasy";
+    case 26: return "Phazd";
+    default: return "Custom Song";
   }
 }
+
+void (*SupportLayer_onEmail)(void*);
+  void SupportLayer_onEmail_H(void*) {
+    FLAlertLayer::create(
+            nullptr,
+            "Credits",
+            CCString::createWithFormat("<cy>AntiMatter (Unsimply)</c>: For making updates 11-%i possible\n<cg>Gastiblast</c>: Creating the Pokemon Series \n<cl>Nikolyas</c>: Massive help with update 10 \n<cp>elektrick</c>: Making the \"nano\" logo \n<cr>Misty</c>: Patching the particles for the purple coins\n<cl> FMOD Studio, copyright Firelight Technologies Pty, Ltd.</c>\n\nYou: For playing!", CURRENT_VERSION)->getCString(),
+            "OK",
+            nullptr,
+            600.f
+        )->show();
+        return;
+  }
 
 class ToggleHack {
   public:
@@ -332,12 +720,32 @@ class ToggleHack {
     }
 
     void showAtts() {
-      float normalPercentageF = MEMBER_BY_OFFSET(float, gjlvl, 0x170);
-      int normalPercentage = (int)normalPercentageF;
+    auto scene = cocos2d::CCDirector::sharedDirector()->getRunningScene();
+    cocos2d::CCArray* children = scene->getChildren();
+    cocos2d::CCObject* obj;
+
+    PauseLayer* pauseLayer = nullptr;
+    CCARRAY_FOREACH(children, obj) {
+        if (dynamic_cast<PauseLayer*>(obj)) {
+            pauseLayer = (PauseLayer*)obj;
+            break;
+        }
+    }
+      if(!pauseLayer) {
+        FLAlertLayer::create(
+            nullptr,
+            "Error",
+            CCString::createWithFormat("You're <cr>not</c> currently playing a level!")->getCString(),
+            "OK",
+            nullptr,
+            300.f
+        )->show();
+        return;
+      }
       FLAlertLayer::create(
             nullptr,
             "Info",
-            CCString::createWithFormat("<cy>Attempts:</c> %i\n<cg>Jumps:</c> %i\n<cp>Debug Normal Percentage</c> %i", atts, jumps, normalPercentage)->getCString(),
+            CCString::createWithFormat("<cy>Attempts:</c> %i\n<cg>Jumps:</c> %i", atts, jumps)->getCString(),
             "OK",
             nullptr,
             300.f
@@ -418,11 +826,38 @@ class ToggleHack {
 
     void dummy(CCObject* pSender) {};
 
+    void showCredits() {
+      FLAlertLayer::create(
+            nullptr,
+            "Credits",
+            CCString::createWithFormat("<cy>AntiMatter (Unsimply)</c>: For making updates 11-%i possible\n<cg>Gastiblast</c>: Creating the Pokemon Series \n<cl>Nikolyas</c>: Massive help with update 10 \n<cp>elektrick</c>: Making the \"nano\" logo \n<cr>Misty</c>: Patching the particles for the purple coins\n<cl> FMOD Studio, copyright Firelight Technologies Pty, Ltd.</c>\n\nYou: For playing!", CURRENT_VERSION)->getCString(),
+            "OK",
+            nullptr,
+            600.f
+        )->show();
+    }
+
 };
 
 void (*GameStatsManager_incrementStat)(GameStatsManager* self, char* type, int amount);
 void GameStatsManager_incrementStat_H(GameStatsManager* self, char* type, int amount) {
     GameStatsManager_incrementStat(self, type, amount);
+}
+
+std::string getUID() {
+    cocos2d::JniMethodInfo t;
+    if (cocos2d::JniHelper::getStaticMethodInfo(t, 
+        "com/customRobTop/BaseRobTopActivity", 
+        "getUserID", 
+        "()Ljava/lang/String;")) 
+    {
+        jstring jstr = (jstring)t.env->CallStaticObjectMethod(t.classID, t.methodID);
+        std::string uid = cocos2d::JniHelper::jstring2string(jstr);
+        t.env->DeleteLocalRef(t.classID);
+        t.env->DeleteLocalRef(jstr);
+        return uid;
+    }
+    return "noUID";
 }
 
   void ExtraLayer::incrementStat(GameStatsManager* self, char* type, int amount) {
@@ -438,10 +873,38 @@ void GameStatsManager_incrementStat_H(GameStatsManager* self, char* type, int am
     def->setBoolForKey("noParticles", noParticles);
     def->setBoolForKey("noDeathEffect", noDeathEffect);
     def->setBoolForKey("speedhack", speedhack);
-    def->setBoolForKey("noclipdeaths", ExtraLayer::m_deaths);
     def->setBoolForKey("noclipflash", ExtraLayer::m_flash);
     def->setFloatForKey("speedhackInt", ExtraLayer::m_speedhack);
-
+    def->setBoolForKey("noRotation", noRotation);
+    def->setBoolForKey("noRespawn", noRespawn);
+    def->setBoolForKey("hidePauseMenu", hidePauseMenu);
+    def->setBoolForKey("deleteAll", deleteAll);
+    def->setBoolForKey("filterOption", filterOption);
+    def->setBoolForKey("levelLength", levelLength);
+    def->setFloatForKey("musicVolume", musicVolume);
+    def->setBoolForKey("moreEditorButtons", moreEditorButtons);
+    def->setBoolForKey("showEpic", showEpic);
+    def->setBoolForKey("showSong", showSong);
+    def->setBoolForKey("pmh", pmh);
+    def->setBoolForKey("dontShowAlert", dontShowAlert);
+    def->setBoolForKey("fps_label", fps_label);
+    def->setBoolForKey("deaths_label", deaths_label);
+    def->setBoolForKey("time_label", time_label);
+    def->setBoolForKey("speedhack_label", speedhack_label);
+    def->setBoolForKey("clicks_label", clicks_label);
+    def->setBoolForKey("cheat_label", cheat_label);
+    def->setBoolForKey("custom_label", custom_label);
+    def->setBoolForKey("cps_label", cps_label);
+    def->setBoolForKey("speedhackMusic", ExtraLayer::m_speedhackMusic);
+    def->setBoolForKey("instantFlip", instantFlip);
+    def->setBoolForKey("extendEditor", extendEditor);
+    def->setBoolForKey("exitButton", exitButton);
+    def->setBoolForKey("hideVault", hideVault);
+    def->setBoolForKey("iconHack", iconHack);
+    def->setBoolForKey("editorHitbox", editorHitbox);
+    def->setBoolForKey("noSceneTransition", noSceneTransition);
+    def->setBoolForKey("playerControl", playerControl);
+    def->setBoolForKey("playback", playback);
     def->flush();
     return true;
   }
@@ -451,15 +914,44 @@ void GameStatsManager_incrementStat_H(GameStatsManager* self, char* type, int am
   noclip = def->getBoolForKey("noclip", false);
   hideatts = def->getBoolForKey("hideatts", false);
   extrainfo = def->getBoolForKey("extrainfo", false);
+  extrainfo = false;
   doorClosed = def->getBoolForKey("doorClosed", false);
   filterOption = def->getBoolForKey("filterOption", false);
   fps = def->getBoolForKey("fps", false);
   noParticles = def->getBoolForKey("noParticles", false);
   noDeathEffect = def->getBoolForKey("noDeathEffect", false);
   speedhack = def->getBoolForKey("speedhack", false);
-  ExtraLayer::m_deaths = def->getBoolForKey("noclipdeaths", false);
   ExtraLayer::m_flash = def->getBoolForKey("noclipflash", false);
   ExtraLayer::m_speedhack = def->getFloatForKey("speedhackInt", 1.0f);
+  noRotation = def->getBoolForKey("noRotation", false);
+  noRespawn = def->getBoolForKey("noRespawn", false);
+  hidePauseMenu = def->getBoolForKey("hidePauseMenu", false);
+  deleteAll = def->getBoolForKey("deleteAll", false);
+  levelLength = def->getBoolForKey("levelLength", false);
+  musicVolume = def->getFloatForKey("musicVolume", 1.0f);
+  moreEditorButtons = def->getBoolForKey("moreEditorButtons", false);
+  showEpic = def->getBoolForKey("showEpic", false);
+  showSong = def->getBoolForKey("showSong", false);
+  pmh = def->getBoolForKey("pmh", false);
+  dontShowAlert = def->getBoolForKey("dontShowAlert", false);
+  fps_label = def->getBoolForKey("fps_label", false);
+  deaths_label = def->getBoolForKey("deaths_label", false);
+  time_label = def->getBoolForKey("time_label", false);
+  speedhack_label = def->getBoolForKey("speedhack_label", false);
+  clicks_label = def->getBoolForKey("clicks_label", false);
+  cheat_label = def->getBoolForKey("cheat_label", false);
+  custom_label = def->getBoolForKey("custom_label", false);
+  cps_label = def->getBoolForKey("cps_label", false);
+  ExtraLayer::m_speedhackMusic = def->getBoolForKey("speedhackMusic", false);
+  instantFlip = def->getBoolForKey("instantFlip", false);
+  extendEditor = def->getBoolForKey("extendEditor", false);
+  exitButton = def->getBoolForKey("exitButton", false);
+  hideVault = def->getBoolForKey("hideVault", false);
+  iconHack = def->getBoolForKey("iconHack", false);
+  editorHitbox = def->getBoolForKey("editorHitbox", false);
+  noSceneTransition = def->getBoolForKey("noSceneTransition", false);
+  playerControl = def->getBoolForKey("playerControl", false);
+  playback = def->getBoolForKey("playback", false);
   }
 
   ExtraLayer* ExtraLayer::create(CCLayer* referrer) {
@@ -479,322 +971,358 @@ void ExtraLayer::onNoclipOptions() {
 
 void ExtraLayer::onPEEOptions() {
   auto extra = SpeedhackOptionsLayer::create(this);
-    this->addChild(extra, 1000);
+  this->addChild(extra, 1000);
+}
+
+void ExtraLayer::onCustomLabelOptions() {
+  auto extra = CustomLabelOptionsLayer::create(this);
+  this->addChild(extra, 1000);
+}
+
+void enablePage(bool enable, CCLayer* page) {
+  CCObject* pObj = NULL;
+  page->setVisible(enable);
+    page->setTouchEnabled(enable);
+    CCArray* children = page->getChildren(); 
+
+CCARRAY_FOREACH(children, pObj) {
+    CCMenu* menu = dynamic_cast<CCMenu*>(pObj);
+    if (menu) {
+        menu->setEnabled(enable); 
+    }
+  }
+}
+
+void enableButton(bool enable, CCMenu* button) {
+  button->setVisible(enable);
+  button->setEnabled(enable);
+}
+
+void ExtraLayer::nextPage() {
+  CCObject* pObj = NULL;
+switch(ExtraLayer::m_currentPage) {
+  case 1:
+    enablePage(true, m_page2);
+    enablePage(false, m_page1);
+    enableButton(true, m_left);
+    enableButton(true, m_right);
+  break;
+  case 2:
+    enablePage(true, m_page3);
+    enablePage(false, m_page2);
+    enableButton(true, m_left);
+    enableButton(true, m_right);
+  break;
+  case 3:
+    enablePage(true, m_page4);
+    enablePage(false, m_page3);
+    enableButton(true, m_left);
+    enableButton(true, m_right);
+  break;
+  case 4:
+    enablePage(true, m_page5);
+    enablePage(false, m_page4);
+    enableButton(true, m_left);
+    enableButton(false, m_right);
+}
+ExtraLayer::m_currentPage++;
+}
+
+void ExtraLayer::prevPage() {
+  CCObject* pObj = NULL;
+switch(ExtraLayer::m_currentPage) {
+  case 2:
+    enablePage(true, m_page1);
+    enablePage(false, m_page2);
+    enableButton(false, m_left);
+    enableButton(true, m_right);
+  break;
+  case 3:
+    enablePage(true, m_page2);
+    enablePage(false, m_page3);
+    enableButton(true, m_left);
+    enableButton(true, m_right);
+  break;
+  case 4:
+    enablePage(true, m_page3);
+    enablePage(false, m_page4);
+    enableButton(true, m_left);
+    enableButton(true, m_right);
+  break;
+  case 5:
+    enablePage(true, m_page4);
+    enablePage(false, m_page5);
+    enableButton(true, m_left);
+    enableButton(true, m_right);
+}
+    ExtraLayer::m_currentPage--;
+}
+
+void ExtraLayer::toggle(CCObject* sender) {
+    auto btn = static_cast<CCMenuItemToggler*>(sender);
+    bool* toggleVar = static_cast<bool*>(btn->getUserData());
+    if(toggleVar) *toggleVar = !*toggleVar;
+}
+
+void ExtraLayer::dummy(CCObject*) {
+  return;
+}
+
+void ExtraLayer::volumeSliderCallback(CCObject* pSender, CCControlEvent controlEvent) {
+    CCControlSlider* pSlider = (CCControlSlider*)pSender;
+    float newVolume = pSlider->getValue();
+    auto gman = GameManager::sharedState();
+    // if(MEMBER_BY_OFFSET(int, gman, 0x171)) CocosDenshion::SimpleAudioEngine::sharedEngine()->setBackgroundMusicVolume(newVolume);
+    musicVolume = newVolume;
+}
+
+void PauseLayer::toggleVisibility() {
+    CCObject* child;
+    CCARRAY_FOREACH(this->getChildren(), child) {
+        auto node = dynamic_cast<CCNode*>(child);
+        if (node) node->setVisible(false);
+        auto menu = dynamic_cast<CCMenu*>(node);
+                if (menu) {
+                    menu->setTouchEnabled(false);
+                }
+    }
+    auto HPL = HidePauseLayer::create(this);
+    this->addChild(HPL, 1000);
+}
+
+CCNode* ExtraLayer::optionToggler(const char* display, bool* toggleVar, bool addinfo, ExtraLayerInfo::InfoType infoType) {
+  auto toggleOffSprite = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
+  auto toggleOnSprite = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
+  auto itemOff = CCMenuItemSprite::create(toggleOffSprite, toggleOffSprite, nullptr, nullptr);
+  auto itemOn  = CCMenuItemSprite::create(toggleOnSprite,  toggleOnSprite,  nullptr, nullptr);
+
+auto btn = CCMenuItemToggler::create(
+    getMenuToggleSprite(itemOn, itemOff, *toggleVar), 
+    getMenuToggleSprite(itemOff, itemOn, *toggleVar),  
+    this, 
+    menu_selector(ExtraLayer::toggle) 
+);
+
+btn->setUserData(toggleVar);
+btn->setAnchorPoint(ccp(0, 0.5f));
+btn->setScale(0.8f);
+
+   auto counterLabel = CCLabelBMFont::create(
+            CCString::createWithFormat("%s", display)->getCString(), 
+            "bigFont.fnt"
+        );
+  counterLabel->setScale(0.5f);
+  counterLabel->setAnchorPoint(ccp(0, 0.5f));
+  btn->addChild(counterLabel);
+
+  if(addinfo) {
+    auto infobutton = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
+    CCMenuItemSpriteExtra* menuBtn = CCMenuItemSpriteExtra::create(infobutton, infobutton, this, menu_selector(ExtraLayer::showInfo));
+    menuBtn->setUserData((void*)infoType);
+    auto btnMenu = CCMenu::create(menuBtn, NULL);
+    btnMenu->ignoreAnchorPointForPosition(false);
+    btnMenu->setContentSize(CCSizeZero);
+    btnMenu->setPosition(ccp(0, 0));
+    menuBtn->setPosition(ccp(-6.0f, (btn->getContentSize().height * 2) + 6));
+    btnMenu->setScale(0.5f);
+    btn->addChild(btnMenu, 10);
+  }
+  auto menu = CCMenu::create(btn, NULL);
+  menu->setPosition(CCPointZero);
+
+  float padding = 5.0f;
+  counterLabel->setPosition(ccp(btn->getContentSize().width + padding, btn->getContentSize().height / 2));
+  float totalWidth = btn->getContentSize().width + padding + (counterLabel->getContentSize().width * counterLabel->getScaleX());
+  float totalHeight = MAX(btn->getContentSize().height, counterLabel->getContentSize().height);
+
+  auto container = CCNode::create();
+  float totalWidth2 = padding + counterLabel->getContentSize().width;
+  container->setContentSize(CCSizeMake(totalWidth2, btn->getContentSize().height));
+  container->addChild(menu);
+
+  return container;
+}
+
+CCMenu* ExtraLayer::createOptionsMenu(const char* display, int length, SEL_MenuHandler func) {
+  auto sprite = ButtonSprite::create(
+    CCString::createWithFormat("%s", display)->getCString(), length, 0, 1, false, "goldFont.fnt", "GJ_button_01-hd.png"
+  );
+  
+  auto menu = CCMenu::create();
+  auto btn = CCMenuItemSpriteExtra::create(
+    sprite,
+    sprite,
+    this,
+    func
+  );
+
+  menu->addChild(btn);
+  menu->setPosition(CCPointZero);
+  return menu;
+}
+
+void ExtraLayer::exportSaveFile() {
+bool gm = this->extractFile("CCGameManager.dat");
+bool ll = this->extractFile("CCLocalLevels.dat");
+// bool ud = this->extractFile("CCUserDefault.xml");
+
+if(!gm || !ll/*|| !ud*/) return;
+
+FLAlertLayer::create(
+      nullptr,
+      "Exported",
+      CCString::createWithFormat("Exported save file to:\n<cy>/storage/emulated/0/violetps/userdata</c>")->getCString(),
+      "OK",
+      nullptr,
+      300.f
+    )->show();
+}
+
+bool ExtraLayer::extractFile(char const* file) {
+    std::string internalPath = "/data/data/com.gastibx.pokemongdpps/" + std::string(file);
+    std::string externalPath = "/storage/emulated/0/violetps/userdata/" + std::string(file);
+    std::ifstream src(internalPath.c_str(), std::ios::binary);
+    if (!src.is_open()) {
+      FLAlertLayer::create(
+      nullptr,
+      "Error",
+      CCString::createWithFormat("Error happened while trying to export to: \n<cy>%s</c>", externalPath.c_str())->getCString(),
+      "OK",
+      nullptr,
+      300.f
+    )->show();
+      return false;
+      }
+    create_directories("/storage/emulated/0/violetps/userdata");
+    std::ofstream dst(externalPath.c_str(), std::ios::binary);
+    dst << src.rdbuf();
+    src.close();
+    dst.close();
+    return true;
+}
+
+void ExtraLayer::manualSave(CCObject*) {
+    saveSettingsToFile();
+    FLAlertLayer::create(
+      nullptr,
+      "Success",
+      "Succesfully saved all the settings",
+      "OK",
+      nullptr,
+      300.f
+    )->show();
+}
+
+void ExtraLayer::showUID(CCObject*) {
+    FLAlertLayer::create(
+      nullptr,
+      "Info",
+      CCString::createWithFormat("Your unique userID: <cy>%s</c>\n<cr>Do not show this to anybody.</c>", getUID().c_str())->getCString(),
+      "OK",
+      nullptr,
+      300.f
+    )->show();
 }
 
   bool ExtraLayer::init(CCLayer* self) {
+
+auto win_size = CCDirector::sharedDirector()->getWinSize();
+
+    CCNode* pivot = CCNode::create();
+    pivot->setPosition(ccp(win_size.width/2, win_size.height/2));
+    this->addChild(pivot);
+    CCNode* contentHolder = CCNode::create();
+    contentHolder->setPosition(ccp(-win_size.width/2, -win_size.height/2));
+    pivot->addChild(contentHolder);
+    pivot->setScale(0.1f);
+    CCScaleTo* scaleUp = CCScaleTo::create(0.5f, 1.0f);
+    CCEaseElasticOut* ease = CCEaseElasticOut::create(scaleUp, 0.5f);
+    pivot->runAction(ease);
+
     CCNode* leftParent = CCNode::create();
-    auto win_size = CCDirector::sharedDirector()->getWinSize();
      CCLayerColor *overlay = CCLayerColor::layerWithColor(ccc4(0, 0, 0, 127),
                                                 win_size.width,
                                                  win_size.height);
     overlay->setPosition(0,0);
-    this->addChild(overlay);
-    this->addChild(leftParent);
+    contentHolder->addChild(overlay);
+    contentHolder->addChild(leftParent);
     leftParent->setPosition(win_size.width / 2, win_size.height / 2);
 
 
     CCRect rect = CCRectMake(0, 0, 80, 80);
     cocos2d::extension::CCScale9Sprite* panel = cocos2d::extension::CCScale9Sprite::create("GJ_square01-hd.png", rect);
-    panel->setContentSize(CCSizeMake(win_size.width - 50, win_size.height - 25));
+    panel->setContentSize(CCSizeMake(win_size.width - 75, win_size.height - 25));
     leftParent->addChild(panel);
     panel->setPosition({0.f, 0.f});
 
     CCLayer* mainLayoutLayer = CCLayer::create();
-mainLayoutLayer->setAnchorPoint(ccp(0.5f, 0.5f));
+    mainLayoutLayer->setAnchorPoint(ccp(0.0f, 0.0f));
 
 
-    auto buttonMenu = CCMenu::create();
+auto buttonMenu = CCMenu::create();
 auto button = CCSprite::createWithSpriteFrameName("GJ_closeBtn_001.png");
 CCMenuItemSpriteExtra* menuBtn = CCMenuItemSpriteExtra::create(button, button, this, menu_selector(ExtraLayer::keyBackClicked));
-menuBtn->setPosition({-25,-25});
+menuBtn->setPosition({-50,-25});
 buttonMenu->setPosition({win_size.width, win_size.height});
 buttonMenu->addChild(menuBtn);
-this->addChild(buttonMenu);
-this->setTouchEnabled(true);
-self->setTouchEnabled(false);
+contentHolder->addChild(buttonMenu);
 
-auto titleLabel = CCLabelBMFont::create(
-            CCString::createWithFormat("More Options")->getCString(), 
-            "goldFont-hd.fnt"
-        );
+auto rightButtonMenu = CCMenu::create();
+auto rightButton = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
+rightButton->setFlipX(true);
+CCMenuItemSpriteExtra* rightMenuBtn = CCMenuItemSpriteExtra::create(rightButton, rightButton, this, menu_selector(ExtraLayer::nextPage));
+rightMenuBtn->setPosition({0,0});
+rightButtonMenu->setPosition({win_size.width - 20, win_size.height / 2});
+rightButtonMenu->addChild(rightMenuBtn);
+m_right = rightButtonMenu;
+contentHolder->addChild(rightButtonMenu);
 
-  titleLabel->setPosition({win_size.width / 2, win_size.height - 35});
-  titleLabel->setScale(1.0f);
-  this->addChild(titleLabel);
+auto leftButtonMenu = CCMenu::create();
+auto leftButton = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
+CCMenuItemSpriteExtra* leftMenuBtn = CCMenuItemSpriteExtra::create(leftButton, leftButton, this, menu_selector(ExtraLayer::prevPage));
+leftMenuBtn->setPosition({0,0});
+leftButtonMenu->setPosition({20, win_size.height / 2});
+leftButtonMenu->addChild(leftMenuBtn);
+m_left = leftButtonMenu;
+contentHolder->addChild(leftButtonMenu);
 
-  auto toggleOffSprite = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
-  CCAssert(toggleOffSprite != nullptr, "FATAL error: GJ_checkOff_001.png missing from the cache"); // me having issues with ccsprite
-  auto toggleOnSprite = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
-  CCAssert(toggleOnSprite != nullptr, "FATAL error: GJ_checkOn_001.png missing from the cache");
-  auto itemOff = CCMenuItemSprite::create(toggleOffSprite, toggleOffSprite, nullptr, nullptr);
-auto itemOn  = CCMenuItemSprite::create(toggleOnSprite,  toggleOnSprite,  nullptr, nullptr);
+  int padding = 35;
+  int startX = 100;
+  int endX = startX * 3 + 10;
 
-auto hideAttsbutton = CCMenuItemToggler::create(
-    getMenuToggleSprite(itemOn, itemOff, hideatts), 
-    getMenuToggleSprite(itemOff, itemOn, hideatts),  
-    this, // Target
-    menu_selector(ToggleHack::hideAttempts) 
-);
+  auto noclipBtn = this->optionToggler("No-Clip", &noclip);
+  noclipBtn->setPosition(startX, win_size.height - 100);
+  auto noclipBtnMore = this->createOptionsMenu("+", 50, menu_selector(ExtraLayer::onNoclipOptions));
+  noclipBtnMore->setPosition(ccp(noclipBtn->getPosition().x + noclipBtn->getContentSize().width, noclipBtn->getPosition().y));
 
-  auto menu1 = CCMenu::create();
-   auto counterLabel = CCLabelBMFont::create(
-            CCString::createWithFormat("Hide Attempts")->getCString(), 
-            "bigFont.fnt"
-        );
-        CCAssert(counterLabel != nullptr, "FATAL error: bigFont.fnt missing");
-        counterLabel->setScale(0.5f);
-        auto labelMenuItem = CCMenuItemLabel::create(
-    counterLabel, 
-    this, 
-    menu_selector(ExtraLayer::showHA) 
-);
-  hideAttsbutton->setScale(0.8f);
-  menu1->addChild(hideAttsbutton);
-  menu1->addChild(labelMenuItem);
-  menu1->setPosition({50, win_size.height - 25});
+  auto speedhackBtn = this->optionToggler("Speedhack", &speedhack, true, ExtraLayerInfo::InfoType::PEE);
+  speedhackBtn->setPosition(startX, win_size.height - 100 - padding);
+  auto speedhackBtnMore = this->createOptionsMenu("+", 50, menu_selector(ExtraLayer::onPEEOptions));
+  speedhackBtnMore->setPosition(ccp(noclipBtnMore->getPosition().x, speedhackBtn->getPosition().y));
 
-  menu1->alignItemsHorizontally();
+  auto percentageBtn = this->optionToggler("Display Percentage", &noParticles);
+  percentageBtn->setPosition(startX, win_size.height - 100 - (padding * 2));
 
-  
-auto toggleOffSprite2 = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
-  CCAssert(toggleOffSprite2 != nullptr, "FATAL error: GJ_checkOff_001.png missing from the cache");
-  auto toggleOnSprite2 = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
-  CCAssert(toggleOnSprite2 != nullptr, "FATAL error: GJ_checkOn_001.png missing from the cache");
-  auto itemOff2 = CCMenuItemSprite::create(toggleOffSprite2, toggleOffSprite2, nullptr, nullptr);
-auto itemOn2  = CCMenuItemSprite::create(toggleOnSprite2,  toggleOnSprite2,  nullptr, nullptr);
+  auto noDeathEffectBtn = this->optionToggler("No Death Effect", &noDeathEffect);
+  noDeathEffectBtn->setPosition(startX, win_size.height - 100 - (padding * 3));
 
-  auto extraInfoButton = CCMenuItemToggler::create(
-    getMenuToggleSprite(itemOn2, itemOff2, extrainfo),
-    getMenuToggleSprite(itemOff2, itemOn2, extrainfo),  
-    this, 
-    menu_selector(ToggleHack::extraInfo) 
-);
+  auto hideAttemptsBtn = this->optionToggler("Hide Attempts", &hideatts);
+  hideAttemptsBtn->setPosition(startX, win_size.height - 100 - (padding * 4));
 
-  auto menu2 = CCMenu::create();
-   auto counterLabel2 = CCLabelBMFont::create(
-            CCString::createWithFormat("Show Extra Info")->getCString(), 
-            "bigFont.fnt"
-        );
-        counterLabel2->setScale(0.5f);
-        auto labelMenuItem2 = CCMenuItemLabel::create(
-    counterLabel2, 
-    this, 
-    menu_selector(ExtraLayer::showEI) 
-);
-  extraInfoButton->setScale(0.8f);
-  menu2->addChild(extraInfoButton);
-  menu2->addChild(labelMenuItem2);
-  menu2->setPosition({200, win_size.height - 100});
+  auto playSessionInfoBtn = this->optionToggler("Hide Pause Menu", &hidePauseMenu, true, ExtraLayerInfo::InfoType::HPM);
+  playSessionInfoBtn->setPosition(endX, win_size.height - 100);
 
-  menu2->alignItemsHorizontally();
+  auto noRotationBtn = this->optionToggler("No Rotation", &noRotation);
+  noRotationBtn->setPosition(endX, win_size.height - 100 - (padding));
 
-  auto toggleOffSprite3 = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
-  CCAssert(toggleOffSprite3 != nullptr, "FATAL error: GJ_checkOff_001.png missing from the cache");
-  auto toggleOnSprite3 = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
-  CCAssert(toggleOnSprite3 != nullptr, "FATAL error: GJ_checkOn_001.png missing from the cache");
-  auto itemOff3 = CCMenuItemSprite::create(toggleOffSprite3, toggleOffSprite3, nullptr, nullptr);
-auto itemOn3  = CCMenuItemSprite::create(toggleOnSprite3,  toggleOnSprite3,  nullptr, nullptr);
+  auto noRespawnBtn = this->optionToggler("No Respawn Time", &noRespawn, true, ExtraLayerInfo::InfoType::NRT);
+  noRespawnBtn->setPosition(endX, win_size.height - 100 - (padding * 2));
 
-  auto PMHButton = CCMenuItemToggler::create(
-    getMenuToggleSprite(itemOn3, itemOff3, pmh),
-    getMenuToggleSprite(itemOff3, itemOn3, pmh),  
-    this, 
-    menu_selector(ToggleHack::pmhf) 
-);
+  auto pmhBtn = this->optionToggler("Practice Music Hack", &pmh);
+  pmhBtn->setPosition(endX, win_size.height - 100 - (padding * 3));
 
-  auto menu3 = CCMenu::create();
-   auto counterLabel3 = CCLabelBMFont::create(
-            CCString::createWithFormat("Practice Music Hack")->getCString(), 
-            "bigFont.fnt"
-        );
-        counterLabel3->setScale(0.5f);
-        auto labelMenuItem3 = CCMenuItemLabel::create(
-    counterLabel3, 
-    this, 
-    menu_selector(ExtraLayer::showPMH) 
-);
-  PMHButton->setScale(0.8f);
-  menu3->addChild(PMHButton);
-  menu3->addChild(labelMenuItem3);
-  menu3->setPosition({200, win_size.height - 100});
-
-  menu3->alignItemsHorizontally();
-
-  auto toggleOffSprite4 = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
-  
-  auto toggleOnSprite4 = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
-  
-  auto itemOff4 = CCMenuItemSprite::create(toggleOffSprite4, toggleOffSprite4, nullptr, nullptr);
-auto itemOn4  = CCMenuItemSprite::create(toggleOnSprite4,  toggleOnSprite4,  nullptr, nullptr);
-
-  auto FPSButton = CCMenuItemToggler::create(
-    getMenuToggleSprite(itemOn4, itemOff4, fps),
-    getMenuToggleSprite(itemOff4, itemOn4, fps),  
-    this, 
-    menu_selector(ToggleHack::dfps) 
-);
-
-  auto menu4 = CCMenu::create();
-   auto counterLabel4 = CCLabelBMFont::create(
-            CCString::createWithFormat("Show FPS")->getCString(), 
-            "bigFont.fnt"
-        );
-        counterLabel4->setScale(0.5f);
-        auto labelMenuItem4 = CCMenuItemLabel::create(
-    counterLabel4, 
-    this, 
-    menu_selector(ExtraLayer::showFPS) 
-);
-  FPSButton->setScale(0.8f);
-  menu4->addChild(FPSButton);
-  menu4->addChild(labelMenuItem4);
-
-  menu4->alignItemsHorizontally();
-
-  auto toggleOffSprite5 = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
-  auto toggleOnSprite5 = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
-  
-  auto itemOff5 = CCMenuItemSprite::create(toggleOffSprite5, toggleOffSprite5, nullptr, nullptr);
-auto itemOn5  = CCMenuItemSprite::create(toggleOnSprite5,  toggleOnSprite5,  nullptr, nullptr);
-
-  auto NPButton = CCMenuItemToggler::create(
-    getMenuToggleSprite(itemOn5, itemOff5, noParticles),
-    getMenuToggleSprite(itemOff5, itemOn5, noParticles),  
-    this, 
-    menu_selector(ToggleHack::np) 
-);
-
-  auto menu5 = CCMenu::create();
-   auto counterLabel5 = CCLabelBMFont::create(
-            CCString::createWithFormat("Show Percentage")->getCString(), 
-            "bigFont.fnt"
-        );
-        counterLabel5->setScale(0.5f);
-        auto labelMenuItem5 = CCMenuItemLabel::create(
-    counterLabel5, 
-    this, 
-    menu_selector(ExtraLayer::showNP) 
-);
-  NPButton->setScale(0.8f);
-  menu5->addChild(NPButton);
-  menu5->addChild(labelMenuItem5);
-
-  menu5->alignItemsHorizontally();
-
-   auto toggleOffSprite6 = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
-  auto toggleOnSprite6 = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
-  
-  auto itemOff6 = CCMenuItemSprite::create(toggleOffSprite6, toggleOffSprite6, nullptr, nullptr);
-auto itemOn6 = CCMenuItemSprite::create(toggleOnSprite6,  toggleOnSprite6,  nullptr, nullptr);
-
-  auto NDEButton = CCMenuItemToggler::create(
-    getMenuToggleSprite(itemOn6, itemOff6, noDeathEffect),
-    getMenuToggleSprite(itemOff6, itemOn6, noDeathEffect),  
-    this, 
-    menu_selector(ToggleHack::nde) 
-);
-
-  auto menu6 = CCMenu::create();
-   auto counterLabel6 = CCLabelBMFont::create(
-            CCString::createWithFormat("No Death Effect")->getCString(), 
-            "bigFont.fnt"
-        );
-        counterLabel6->setScale(0.5f);
-        auto labelMenuItem6 = CCMenuItemLabel::create(
-    counterLabel6, 
-    this, 
-    menu_selector(ExtraLayer::showNDE) 
-);
-  NDEButton->setScale(0.8f);
-  menu6->addChild(NDEButton);
-  menu6->addChild(labelMenuItem6);
-
-  menu6->alignItemsHorizontally();
-
-auto toggleOffSprite7 = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
-  auto toggleOnSprite7 = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
-  
-  auto itemOff7 = CCMenuItemSprite::create(toggleOffSprite7, toggleOffSprite7, nullptr, nullptr);
-auto itemOn7 = CCMenuItemSprite::create(toggleOnSprite7,  toggleOnSprite7,  nullptr, nullptr);
-
-  auto NOCLIPButton = CCMenuItemToggler::create(
-    getMenuToggleSprite(itemOn7, itemOff7, noclip),
-    getMenuToggleSprite(itemOff7, itemOn7, noclip),  
-    this, 
-    menu_selector(ToggleHack::toggleNoclip)
-  );
-  auto menu7 = CCMenu::create();
-  auto counterLabel7 = CCLabelBMFont::create(
-            CCString::createWithFormat("No-Clip")->getCString(), 
-            "bigFont.fnt"
-        );
-        counterLabel7->setScale(0.5f);
-        auto labelMenuItem7 = CCMenuItemLabel::create(
-    counterLabel7, 
-    this, 
-    menu_selector(ExtraLayer::showNOCLIP) 
-);
-
-auto noclipBtnSprite = ButtonSprite::create(
-    "+", 25, 0, 1, false, "goldFont.fnt", "GJ_button_01-hd.png"
-  );
-  
-  auto noclipButtonMore = CCMenuItemSpriteExtra::create(
-    noclipBtnSprite,
-    noclipBtnSprite,
-    this,
-    menu_selector(ExtraLayer::onNoclipOptions)
-  );
-  NOCLIPButton->setScale(0.8f);
-  noclipButtonMore->setPosition(-100, 0);
-  menu7->addChild(NOCLIPButton);
-  menu7->addChild(labelMenuItem7);
-  menu7->addChild(noclipButtonMore);
-  menu7->alignItemsHorizontally();
-
-  auto toggleOffSprite8 = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
-  auto toggleOnSprite8 = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
-  
-  auto itemOff8 = CCMenuItemSprite::create(toggleOffSprite8, toggleOffSprite8, nullptr, nullptr);
-auto itemOn8 = CCMenuItemSprite::create(toggleOnSprite8,  toggleOnSprite8,  nullptr, nullptr);
-
-  auto PEEButton = CCMenuItemToggler::create(
-    getMenuToggleSprite(itemOn8, itemOff8, speedhack),
-    getMenuToggleSprite(itemOff8, itemOn8, speedhack),  
-    this, 
-    menu_selector(ToggleHack::speedhackT)
-  );
-  auto menu8 = CCMenu::create();
-  auto counterLabel8 = CCLabelBMFont::create(
-            CCString::createWithFormat("Speedhack")->getCString(), 
-            "bigFont.fnt"
-        );
-        counterLabel8->setScale(0.5f);
-        auto labelMenuItem8 = CCMenuItemLabel::create(
-    counterLabel8, 
-    this, 
-    menu_selector(ExtraLayer::showPEE) 
-);
-
-auto PEEBtnSprite = ButtonSprite::create(
-    "+", 25, 0, 1, false, "goldFont.fnt", "GJ_button_01-hd.png"
-  );
-  
-  auto menu9 = CCMenu::create();
-  auto PEEButtonMore = CCMenuItemSpriteExtra::create(
-    PEEBtnSprite,
-    PEEBtnSprite,
-    this,
-    menu_selector(ExtraLayer::onPEEOptions)
-  );
-  menu9->addChild(PEEButtonMore);
-
-  PEEButton->setScale(0.8f);
-  menu8->addChild(PEEButton);
-  menu8->addChild(labelMenuItem8);
-  menu8->alignItemsHorizontally();
-
+  auto instantFlipBtn = this->optionToggler("No Mirror Transition", &instantFlip);
+  instantFlipBtn->setPosition(endX, win_size.height - 100 - (padding * 4));
 
   /* auto menu7 = CCMenu::create();
   auto noclipBtnSprite = ButtonSprite::create(
@@ -811,70 +1339,320 @@ auto PEEBtnSprite = ButtonSprite::create(
   noclipButton->setScale(0.8f);
   menu7->addChild(noclipButton); */
 
-  float paddingBetweenMenus = 20.0f;
-  float horizontalPadding = 100.0f;
-  float xPos = 5.0f;
+auto creditsBtnSprite = ButtonSprite::create(
+    "Credits", 100, 0, 1, false, "goldFont.fnt", "GJ_button_01-hd.png"
+  );
+  
+  auto creditsBtn = CCMenuItemSpriteExtra::create(
+    creditsBtnSprite,
+    creditsBtnSprite,
+    this,
+    menu_selector(ToggleHack::showCredits)
+  );
 
-  menu1->setAnchorPoint(CCPointMake(0.0f, 0.5f));
-  menu2->setAnchorPoint(CCPointMake(0.0f, 0.5f));
-  menu3->setAnchorPoint(CCPointMake(0.0f, 0.5f));
-  menu4->setAnchorPoint(CCPointMake(0.0f, 0.5f));
-  menu5->setAnchorPoint(CCPointMake(0.0f, 0.5f));
-  menu6->setAnchorPoint(CCPointMake(0.0f, 0.5f));
-  menu7->setAnchorPoint(CCPointMake(0.0f, 0.5f));
-  menu8->setAnchorPoint(CCPointMake(0.0f, 0.5f));
+auto creditsMenu = CCMenu::create();
+creditsMenu->addChild(creditsBtn);
+creditsMenu->setPosition(ccp(100, 35));
 
-menu1->setPosition(ccp(xPos, paddingBetweenMenus));
+auto sessionBtnSprite = ButtonSprite::create(
+    "Session Info", 100, 0, 1, false, "goldFont.fnt", "GJ_button_01-hd.png"
+  );
+  
+  auto sessionBtn = CCMenuItemSpriteExtra::create(
+    sessionBtnSprite,
+    sessionBtnSprite,
+    this,
+    menu_selector(ToggleHack::showAtts)
+  );
 
-menu2->setPosition(ccp(xPos + 19, -(paddingBetweenMenus)));
+auto sessionMenu = CCMenu::create();
+sessionMenu->addChild(sessionBtn);
+sessionMenu->setPosition(ccp(100, 35 + sessionBtnSprite->getContentSize().height + 10));
 
-menu3->setPosition(ccp(xPos + 57, -(paddingBetweenMenus) * 3));
+auto exportBtnSprite = ButtonSprite::create(
+    "Export Save File", 100, 0, 1, false, "goldFont.fnt", "GJ_button_01-hd.png"
+  );
+  
+  auto exportBtn = CCMenuItemSpriteExtra::create(
+    exportBtnSprite,
+    exportBtnSprite,
+    this,
+    menu_selector(ExtraLayer::exportSaveFile)
+  );
 
-menu4->setPosition(ccp(xPos - 40, -(paddingBetweenMenus) * 5));
+auto exportMenu = CCMenu::create();
+exportMenu->addChild(exportBtn);
+exportMenu->setPosition(ccp(100, 35 + (exportBtnSprite->getContentSize().height * 2) + 20));
 
-menu5->setPosition(ccp(xPos + 25, -(paddingBetweenMenus) * 7));
+auto manualSaveBtnSprite = ButtonSprite::create(
+    "Save Settings", 100, 0, 1, false, "goldFont.fnt", "GJ_button_01-hd.png"
+  );
+  
+  auto manualSaveBtn = CCMenuItemSpriteExtra::create(
+    manualSaveBtnSprite,
+    manualSaveBtnSprite,
+    this,
+    menu_selector(ExtraLayer::manualSave)
+  );
 
-menu6->setPosition(ccp(xPos + 300, paddingBetweenMenus));
+auto manualSaveMenu = CCMenu::create();
+manualSaveMenu->addChild(manualSaveBtn);
+manualSaveMenu->setPosition(ccp(100, 35 + (manualSaveBtnSprite->getContentSize().height * 3) + 30));
 
-menu7->setPosition(ccp(xPos + 238, -(paddingBetweenMenus)));
+auto getUIDBtnSprite = ButtonSprite::create(
+    "Show UID", 100, 0, 1, false, "goldFont.fnt", "GJ_button_01-hd.png"
+  );
+  
+  auto getUIDBtn = CCMenuItemSpriteExtra::create(
+    getUIDBtnSprite,
+    getUIDBtnSprite,
+    this,
+    menu_selector(ExtraLayer::showUID)
+  );
 
-menu8->setPosition(ccp(xPos + 248, -(paddingBetweenMenus) * 3));
+auto getUIDMenu = CCMenu::create();
+getUIDMenu->addChild(getUIDBtn);
+getUIDMenu->setPosition(ccp(100, 35 + (getUIDBtnSprite->getContentSize().height * 4) + 40));
 
-labelMenuItem->setPosition(12.5, 7);
-labelMenuItem2->setPosition(12.5, 7);
-labelMenuItem3->setPosition(12.5, 7);
-labelMenuItem4->setPosition(12.5, 7);
-labelMenuItem5->setPosition(12.5, 7);
-labelMenuItem6->setPosition(12.5, 7);
-labelMenuItem7->setPosition(0.5, 7);
-labelMenuItem8->setPosition(12.5, 7);
+auto filterBtn = this->optionToggler("Select Filter", &filterOption, true, ExtraLayerInfo::InfoType::SF);
+filterBtn->setPosition(startX, win_size.height - 100);
 
-mainLayoutLayer->setPosition(ccp(win_size.width / 3.0f, win_size.height / 2.0f + 30));
-menu9->setPosition( 350/* 325 */, -(paddingBetweenMenus) * 3);
+auto deleteAllBtn = this->optionToggler("Delete All", &deleteAll, true, ExtraLayerInfo::InfoType::DA);
+deleteAllBtn->setPosition(startX, win_size.height - 100 - padding);
 
-  mainLayoutLayer->addChild(menu1);
-  mainLayoutLayer->addChild(menu2);
-  mainLayoutLayer->addChild(menu3);
-  mainLayoutLayer->addChild(menu4);
-  mainLayoutLayer->addChild(menu5);
-  mainLayoutLayer->addChild(menu6);
-  mainLayoutLayer->addChild(menu7);
-  mainLayoutLayer->addChild(menu9);
-  mainLayoutLayer->addChild(menu8);
-  mainLayoutLayer->reorderChild(menu9, 1000);
-  mainLayoutLayer->reorderChild(menu8, 999);
-  this->addChild(mainLayoutLayer);
+auto levelLengthBtn = this->optionToggler("Show Level Length", &levelLength, true, ExtraLayerInfo::InfoType::LL);
+levelLengthBtn->setPosition(startX, win_size.height - 100 - (padding * 2));
+
+auto editorExtensionBtn = this->optionToggler("Editor Extension", &extendEditor, true, ExtraLayerInfo::InfoType::EX);
+editorExtensionBtn->setPosition(startX, win_size.height - 100 - (padding * 3));
+
+auto MEBBtn = this->optionToggler("More Editor Buttons", &moreEditorButtons, true, ExtraLayerInfo::InfoType::MEB);
+MEBBtn->setPosition(startX, win_size.height - 100 - (padding * 4));
+
+auto EHBtn = this->optionToggler("Editor Hitboxes", &editorHitbox, true, ExtraLayerInfo::InfoType::EH);
+EHBtn->setPosition(endX, win_size.height - 100);
+
+auto playbackBtn = this->optionToggler("Audio Playback", &playback);
+playbackBtn->setPosition(endX, win_size.height - 100 - padding);
+
+
+
+
+
+
+
+auto epicBtn = this->optionToggler("Display Epic Icons", &showEpic);
+epicBtn->setPosition(startX, win_size.height - 100);
+
+auto songBtn = this->optionToggler("Display Audio Track", &showSong, true, ExtraLayerInfo::InfoType::DAT);
+songBtn->setPosition(startX, win_size.height - 100 - padding);
+
+auto songAlertBtn = this->optionToggler("Disable Song Alert", &dontShowAlert);
+songAlertBtn->setPosition(startX, win_size.height - 100 - (padding * 2));
+
+auto exitBtnBtn = this->optionToggler("Add Quit Button", &exitButton, true, ExtraLayerInfo::InfoType::QB);
+exitBtnBtn->setPosition(startX, win_size.height - 100 - (padding * 3));
+
+auto hideVaultBtn = this->optionToggler("Hide Vault", &hideVault, true, ExtraLayerInfo::InfoType::HV);
+hideVaultBtn->setPosition(startX, win_size.height - 100 - (padding * 4));
+
+auto iconHackBtn = this->optionToggler("Icon Hack", &iconHack);
+iconHackBtn->setPosition(endX, win_size.height - 100);
+
+auto noTransitionBtn = this->optionToggler("No Scene Transition", &noSceneTransition);
+noTransitionBtn->setPosition(endX, win_size.height - 100 - (padding));
+
+auto controlBtn = this->optionToggler("Control Start Menu Icons", &playerControl, true, ExtraLayerInfo::InfoType::CTP);
+controlBtn->setPosition(endX, win_size.height - 100 - (padding * 2));
+
+
+CCControlSlider* pSlider = CCControlSlider::create(
+        "slidergroove.png", 
+        "00_transparent.png", 
+        "sliderthumb.png"
+    );
+    pSlider->setMinimumValue(0.0f);
+    pSlider->setMaximumValue(1.0f);
+    float currentVol = CocosDenshion::SimpleAudioEngine::sharedEngine()->getBackgroundMusicVolume();
+    pSlider->setValue(currentVol);
+    pSlider->setPosition(ccp(win_size.width / 2, 30));
+    pSlider->addTargetWithActionForControlEvents(
+        this, 
+        cccontrol_selector(ExtraLayer::volumeSliderCallback), 
+        CCControlEventValueChanged
+    );
+
+    auto volumeLabel = CCLabelBMFont::create(
+            CCString::createWithFormat("Music Volume")->getCString(), 
+            "bigFont.fnt"
+        );
+  volumeLabel->setScale(0.5f);
+  volumeLabel->setPosition(ccp(pSlider->getPosition().x, 50));
+
+  auto titleLabel1 = CCLabelBMFont::create(
+            CCString::createWithFormat("Gameplay")->getCString(), 
+            "goldFont-hd.fnt"
+        );
+
+  auto labelFPS = this->optionToggler("FPS", &fps_label);
+  labelFPS->setPosition(startX, win_size.height - 100);
+
+  auto labelDeaths = this->optionToggler("Deaths", &deaths_label);
+  labelDeaths->setPosition(startX, win_size.height - 100 - padding);
+
+  auto labelTime = this->optionToggler("Time", &time_label);
+  labelTime->setPosition(startX, win_size.height - 100 - (padding * 2));
+
+  auto labelCustom = this->optionToggler("Custom", &custom_label);
+  labelCustom->setPosition(startX, win_size.height - 100 - (padding * 3));
+  auto customLabelBtnMore = this->createOptionsMenu("+", 50, menu_selector(ExtraLayer::onCustomLabelOptions));
+  customLabelBtnMore->setPosition(ccp(labelCustom->getPosition().x + labelCustom->getContentSize().width, labelCustom->getPosition().y));
+
+  auto labelSpeedhack = this->optionToggler("Speedhack", &speedhack_label);
+  labelSpeedhack->setPosition(startX, win_size.height - 100 - (padding * 4));
+
+  auto labelClicks = this->optionToggler("Clicks", &clicks_label);
+  labelClicks->setPosition(endX, win_size.height - 100);
+
+  auto labelCPS = this->optionToggler("CPS", &cps_label);
+  labelCPS->setPosition(endX, win_size.height - 100 - (padding));
+
+  titleLabel1->setPosition({win_size.width / 2, win_size.height - 35});
+  titleLabel1->setScale(1.0f);
+
+  auto titleLabel2 = CCLabelBMFont::create(
+            CCString::createWithFormat("Editor")->getCString(), 
+            "goldFont-hd.fnt"
+        );
+
+  titleLabel2->setPosition({win_size.width / 2, win_size.height - 35});
+  titleLabel2->setScale(1.0f);
+
+  auto titleLabel3 = CCLabelBMFont::create(
+            CCString::createWithFormat("Misc")->getCString(), 
+            "goldFont-hd.fnt"
+        );
+
+  titleLabel3->setPosition({win_size.width / 2, win_size.height - 35});
+  titleLabel3->setScale(1.0f);
+
+  auto titleLabel4 = CCLabelBMFont::create(
+            CCString::createWithFormat("Labels")->getCString(), 
+            "goldFont-hd.fnt"
+        );
+
+  titleLabel4->setPosition({win_size.width / 2, win_size.height - 35});
+  titleLabel4->setScale(1.0f);
+
+  auto titleLabel5 = CCLabelBMFont::create(
+            CCString::createWithFormat("Tools")->getCString(), 
+            "goldFont-hd.fnt"
+        );
+
+  titleLabel5->setPosition({win_size.width / 2, win_size.height - 35});
+  titleLabel5->setScale(1.0f);
+
+m_page1 = CCLayer::create();
+m_page2 = CCLayer::create();
+m_page3 = CCLayer::create();
+m_page4 = CCLayer::create();
+m_page5 = CCLayer::create();
+m_page1->addChild(noclipBtn);
+m_page1->addChild(noclipBtnMore);
+m_page1->addChild(speedhackBtn);
+m_page1->addChild(speedhackBtnMore);
+m_page1->addChild(percentageBtn);
+m_page1->addChild(noDeathEffectBtn);
+m_page1->addChild(hideAttemptsBtn);
+m_page1->addChild(playSessionInfoBtn);
+m_page1->addChild(noRotationBtn);
+m_page1->addChild(noRespawnBtn);
+m_page1->addChild(pmhBtn);
+m_page1->addChild(instantFlipBtn);
+
+  m_page2->addChild(filterBtn);
+  m_page2->addChild(deleteAllBtn);
+  m_page2->addChild(levelLengthBtn);
+  m_page2->addChild(MEBBtn);
+  m_page2->addChild(editorExtensionBtn);
+  m_page2->addChild(EHBtn);
+  m_page2->addChild(playbackBtn);
+
+  m_page5->addChild(creditsMenu);
+  m_page5->addChild(sessionMenu);
+  m_page5->addChild(exportMenu);
+  m_page5->addChild(manualSaveMenu);
+  m_page5->addChild(getUIDMenu);
+  m_page3->addChild(epicBtn);
+  m_page3->addChild(songBtn);
+  m_page3->addChild(songAlertBtn);
+  m_page3->addChild(exitBtnBtn);
+  m_page3->addChild(hideVaultBtn);
+  m_page3->addChild(iconHackBtn);
+  m_page3->addChild(noTransitionBtn);
+  m_page3->addChild(controlBtn);
+
+  if(random(100) == 1) {
+auto oppsBtn = this->optionToggler("Destroy All Opps", &destroyAllOpps, true, ExtraLayerInfo::InfoType::OPPS);
+oppsBtn->setPosition(endX, win_size.height - 100 - (padding * 3));
+m_page3->addChild(oppsBtn);
+}
+
+  m_page4->addChild(labelFPS);
+  m_page4->addChild(labelDeaths);
+  m_page4->addChild(labelTime);
+  m_page4->addChild(labelCustom);
+  m_page4->addChild(customLabelBtnMore);
+  m_page4->addChild(labelSpeedhack);
+  m_page4->addChild(labelClicks);
+  m_page4->addChild(labelCPS);
+
+  m_page1->addChild(titleLabel1);
+  m_page2->addChild(titleLabel2);
+  m_page3->addChild(titleLabel3);
+  m_page4->addChild(titleLabel4);
+  m_page5->addChild(titleLabel5);
+enablePage(true, m_page1);
+enablePage(false, m_page2);
+enablePage(false, m_page3);
+enablePage(false, m_page4);
+enablePage(false, m_page5);
+CCObject* pObj = NULL;
+
+CCArray* childrenself = self->getChildren(); 
+
+CCARRAY_FOREACH(childrenself, pObj) {
+    CCMenu* menu = dynamic_cast<CCMenu*>(pObj);
+    if (menu) {
+        menu->setEnabled(false); 
+    }
+  }
+
+  m_self = self;
+
+  m_left->setVisible(false);
+    m_left->setEnabled(false);
+
+    m_right->setVisible(true);
+    m_right->setEnabled(true);
+
+  contentHolder->addChild(m_page1);
+  contentHolder->addChild(m_page2);
+  contentHolder->addChild(m_page3);
+  contentHolder->addChild(m_page4);
+  contentHolder->addChild(m_page5);
+  contentHolder->addChild(mainLayoutLayer);
 
   auto infoLabel = CCLabelBMFont::create(
-            CCString::createWithFormat("Click on the labels for more info")->getCString(), 
+            CCString::createWithFormat("Version: %i", CURRENT_VERSION)->getCString(), 
             "chatFont.fnt"
         );
         infoLabel->setScale(0.5f);
         infoLabel->setAnchorPoint(CCPointMake(0.5f, 0.5f));
         infoLabel->setColor(ccc3(129, 68, 37));
-        infoLabel->setPosition(win_size.width / 2, 25);
+        infoLabel->setPosition(win_size.width - 75, 25);
 
-        this->addChild(infoLabel);
+        contentHolder->addChild(infoLabel);
 
   
   this->setKeypadEnabled(true);
@@ -887,6 +1665,16 @@ menu9->setPosition( 350/* 325 */, -(paddingBetweenMenus) * 3);
     this->setTouchEnabled(false);
     this->removeFromParentAndCleanup(true);
     elc = false;
+    ExtraLayer::m_currentPage = 1;
+    CCArray* childrenself = m_self->getChildren();
+    CCObject* pObj = NULL; 
+
+CCARRAY_FOREACH(childrenself, pObj) {
+    CCMenu* menu = dynamic_cast<CCMenu*>(pObj);
+    if (menu) {
+        menu->setEnabled(true); 
+    }
+  }
     this->saveSettingsToFile();
   }
 
@@ -894,7 +1682,9 @@ menu9->setPosition( 350/* 325 */, -(paddingBetweenMenus) * 3);
     onClose(nullptr);
   }
 
-  void ExtraLayer::showInfo(ExtraLayerInfo::InfoType type) {
+  void ExtraLayer::showInfo(CCObject* sender) {
+    ExtraLayerInfo::InfoType type = static_cast<ExtraLayerInfo::InfoType>(reinterpret_cast<intptr_t>(static_cast<CCMenu*>(sender)->getUserData()));
+    const char* displayText;
     switch(type) {
       case ExtraLayerInfo::InfoType::PMH: 
       displayText = "Replaces practice music.\n<cr>WARNING:</c> It might not work as intended!";
@@ -940,58 +1730,70 @@ menu9->setPosition( 350/* 325 */, -(paddingBetweenMenus) * 3);
       displayText = "Turns on speedhack. <cr>Turns on Safe Mode automatically</c>";
       titleText = "Speedhack";
       break;
+      case ExtraLayerInfo::InfoType::NRT:
+      displayText = "Removes wait time for respawn, respawn position might be unconsistent.";
+      titleText = "No Death Effect";
+      break;
+      case ExtraLayerInfo::InfoType::HPM:
+      displayText = "Allows you to hide the pause menu, you can zoom and move around the screen.";
+      titleText = "Hide Pause Menu";
+      break;
+      case ExtraLayerInfo::InfoType::DA:
+      displayText = "<cg>Deletes all objects of the same type</c> your selected object has. If multiple objects selected, the first one will be chosen.";
+      titleText = "Delete All";
+      break;
+      case ExtraLayerInfo::InfoType::LL:
+      displayText = "Displays the length of the level in the editor pause menu.";
+      titleText = "Show Level Length";
+      break;
+      case ExtraLayerInfo::InfoType::MEB:
+      displayText = "Adds 1/2 grid move buttons and 1/30 grid move buttons.";
+      titleText = "More Editor Buttons";
+      break;
+      case ExtraLayerInfo::InfoType::DAT:
+      displayText = "<cg>Displays the song of the level</c> in the main page.";
+      titleText = "Display Audio Track";
+      break;
+      case ExtraLayerInfo::InfoType::SPEEDM:
+      displayText = "Changes the speed of the song when using speedhack.";
+      titleText = "Speedhack Music";
+      break;
+      case ExtraLayerInfo::InfoType::OPPS:
+      displayText = "A mod that destroys all <cr>opps.</c>";
+      titleText = "Destroy All Opps";
+      break;
+      case ExtraLayerInfo::InfoType::EX:
+      displayText = "Extends the editor up to 524280 pixels.";
+      titleText = "Editor Extension";
+      break;
+      case ExtraLayerInfo::InfoType::QB:
+      displayText = "<cg>Adds a quit button</c> to the top right part of the screen in the start menu.";
+      titleText = "Add Quit Button";
+      break;
+      case ExtraLayerInfo::InfoType::HV:
+      displayText = "Disables the <cp>Forgotten Vault</c> door in the create menu.";
+      titleText = "Hide Vault";
+      break;
+      case ExtraLayerInfo::InfoType::EH:
+      displayText = "Adds hitboxes to the editor";
+      titleText = "Editor Hitboxes";
+      break;
+      case ExtraLayerInfo::InfoType::CTP:
+      displayText = "Allows you to <cg>control the icons in the start menu.</c>";
+      titleText = "Control Start Menu Icons";
+      break;
       default:
       displayText = "<cr>unknown error</c>";
       titleText = "ERROR";
     }
     FLAlertLayer::create(
             nullptr,
-            CCString::createWithFormat("%s", titleText)->getCString(),
+            CCString::createWithFormat("Info")->getCString(),
             CCString::createWithFormat("%s", displayText)->getCString(),
             "OK",
             nullptr,
             300.f
         )->show();
-  }
-
-  void ExtraLayer::showHA() {
-    showInfo(ExtraLayerInfo::InfoType::HA);
-  }
-
-  void ExtraLayer::showEI() {
-    showInfo(ExtraLayerInfo::InfoType::SEI);
-  }
-
-  void ExtraLayer::showPMH() {
-    showInfo(ExtraLayerInfo::InfoType::PMH);
-  }
-
-  void ExtraLayer::showSF() {
-  showInfo(ExtraLayerInfo::InfoType::SF);
-  }
-
-  void ExtraLayer::showFPS() {
-    showInfo(ExtraLayerInfo::InfoType::FPS);
-  }
-
-   void ExtraLayer::showNP() {
-    showInfo(ExtraLayerInfo::InfoType::NP);
-  }
-
-  void ExtraLayer::showNDE() {
-    showInfo(ExtraLayerInfo::InfoType::NDE);
-  }
-
-  void ExtraLayer::showNOCLIP() {
-    showInfo(ExtraLayerInfo::InfoType::NOCLIP);
-  }
-
-  void ExtraLayer::showFLASH() {
-    showInfo(ExtraLayerInfo::InfoType::FLASH);
-  }
-
-  void ExtraLayer::showPEE() {
-    showInfo(ExtraLayerInfo::InfoType::PEE);
   }
 
 ExtraLayer* extra = nullptr;
@@ -1042,6 +1844,7 @@ void GJGameLevel_destructor_H(GJGameLevel* self) {
 void (*LevelCell_loadCustomLevelCell)(LevelCell*);
 void LevelCell_loadCustomLevelCell_H(LevelCell* self) {
   LevelCell_loadCustomLevelCell(self);
+  if(!showEpic) return;
   GJGameLevel* gamelevel;
   auto lvl = from<GJGameLevel*>(self, 0x180);
   int epic = MEMBER_BY_OFFSET(int, lvl, 0x184);
@@ -1059,6 +1862,7 @@ bool LevelInfoLayer_init_H(CCLayer* self, GJGameLevel* lvl) {
   auto win_size = CCDirector::sharedDirector()->getWinSize();
   LevelInfoLayer_init(self, lvl);
   auto epic = MEMBER_BY_OFFSET(int, lvl, 0x184);
+  if(showSong) {
   int audioTrack = MEMBER_BY_OFFSET(int, lvl, 0x148);
     CCNode* containerNode = CCNode::create();
     auto trackLabel = CCLabelBMFont::create(
@@ -1074,6 +1878,8 @@ bool LevelInfoLayer_init_H(CCLayer* self, GJGameLevel* lvl) {
   containerNode->addChild(trackLabel);
   containerNode->addChild(note);
   self->addChild(containerNode);
+      }
+  if(!showEpic) return 1;
 
 /* auto button2 = CCSprite::create("GJ_duplicateBtn_001.png");
 CCTexture2D *texture = button2->getTexture();
@@ -1095,63 +1901,163 @@ self->addChild(buttonMenu2); */
   return true;
 }
 
+struct CustomSongData {
+    float bpm;
+    float duration;
+};
+
+char* audioFiles[] = {
+    "StereoMadness.mp3",
+    "BackOnTrack.mp3",       
+    "Polargeist.mp3",   
+    "DryOut.mp3",       
+    "BaseAfterBase.mp3",
+    "CantLetGo.mp3",    
+    "Jumper.mp3",       
+    "TimeMachine.mp3",  
+    "Cycles.mp3",       
+    "xStep.mp3",        
+    "Clutterfunk.mp3",        
+    "TheoryOfEverything.mp3", 
+    "Electroman.mp3",         
+    "Clubstep.mp3",           
+    "Active.mp3",             
+    "Electrodynamix.mp3",     
+    "HexagonForce.mp3",       
+    "BlastProcessing.mp3",    
+    "TheoryOfEverything2.mp3",
+    "CosmicDreamer.mp3",      
+    "SkyFortress.ogg",        
+    "SoundOfInfinity.mp3",    
+    "Rupture.mp3",            
+    "Stalemate.mp3",          
+    "GloriousMorning.ogg",     
+    "ChaozFantasy.ogg",
+    "Phazd.ogg"
+};
+
+#define SONGS sizeof(audioFiles) / sizeof(audioFiles[0]) - 1 // made this as easy to replace as possible
+
+static std::string s_persistentPath;
 char * (*LevelTools_getAudioFilename)(int);
 char * LevelTools_getAudioFilename_H(int songID) {
-  switch (songID) {
-    case 0: return "StereoMadness.mp3";
-    case 2: return "Polargeist.mp3";
-    case 3: return "DryOut.mp3";
-    case 4: return "BaseAfterBase.mp3";
-    case 5: return "CantLetGo.mp3";
-    case 6: return "Jumper.mp3";
-    case 7: return "TimeMachine.mp3";
-    case 8: return "Cycles.mp3";
-    case 9: return "xStep.mp3";
-    case 10: return "Clutterfunk.mp3";
-    case 11: return "TheoryOfEverything.mp3";
-    case 12: return "Electroman.mp3";
-    case 13: return "Clubstep.mp3";
-    case 14: return "Active.mp3";
-    case 15: return "Electrodynamix.mp3";
-    case 16: return "HexagonForce.mp3";
-    case 17: return "BlastProcessing.mp3";
-    case 18: return "TheoryOfEverything2.mp3";
-    case 19: return "CosmicDreamer.mp3";
-    case 20: return "SkyFortress.ogg";
-    case 21: return "SoundOfInfinity.mp3";
-    case 22: return "Rupture.mp3";
-    case 23: return "Stalemate.mp3";
-    case 24: return "GloriousMorning.ogg";
-    default: return "BackOnTrack.mp3";
+  if(songID > SONGS) {
+    auto newSongID = songID + 1;
+    s_persistentPath = "/storage/emulated/0/Music/saved_songs/" + to_string(newSongID) + ".mp3";
+    return (char*)s_persistentPath.c_str();
   }
+  else if (songID < 0) return "BackOnTrack.mp3";
+  else return audioFiles[songID];
 }
 
-/*
-const char* (*LevelTools_getAudioString)(int);
-const char* LevelTools_getAudioString_H(int ID) {
-  switch (ID) {
-    case 0: return "0.19;0.80;0.38;0.80;0.75;0.80;1.12;0.80;1.50;0.80;1.88;0.80;2.25;0.80;2.62;0.80;3.00;0.80;3.38;0.80;3.75;0.80;4.12;0.80;4.50;0.80;4.88;0.80;5.25;0.80;5.62;0.80;6.00;0.80;6.38;0.80;6.75;0.80;7.12;0.80;7.50;0.80;7.88;0.80;8.25;0.80;8.62;0.80;9.00;0.80;9.38;0.80;9.75;0.80;10.12;0.80;10.50;0.80;10.88;0.80;11.25;0.80;11.62;0.80;12.00;1.00;12.00;0.90;12.38;0.90;12.75;0.90;13.12;0.90;13.50;0.90;13.88;0.90;14.25;0.90;14.62;0.90;15.00;0.90;15.38;0.90;15.75;0.90;16.12;0.90;16.50;0.90;16.88;0.90;17.25;0.90;17.62;0.90;18.00;0.90;18.38;0.90;18.75;0.90;19.12;0.90;19.50;0.90;19.88;0.90;20.25;0.90;20.62;0.90;21.00;0.90;21.38;0.90;21.75;0.90;22.12;0.90;22.50;0.90;22.88;0.90;23.25;0.90;23.62;0.90;25.50;1.00;25.50;0.90;25.88;0.90;26.25;0.90;26.62;0.90;27.00;1.00;27.00;0.90;27.38;0.90;27.75;0.90;28.12;0.90;28.50;1.00;28.50;0.90;28.88;0.90;29.25;0.90;29.62;0.90;30.00;1.00;30.00;0.90;30.38;0.90;30.75;0.90;31.12;0.90;31.50;1.00;31.50;0.90;31.88;0.90;32.25;0.90;32.62;0.90;33.00;1.00;33.00;0.90;33.38;0.90;33.75;0.90;34.12;0.90;34.50;1.00;34.50;0.90;34.88;0.90;35.25;0.90;35.62;0.90;36.00;1.00;36.00;0.90;36.38;0.90;36.75;0.90;37.12;0.90;37.50;1.00;37.50;0.90;37.88;0.90;38.25;0.90;38.62;0.90;39.00;1.00;39.00;0.90;39.38;0.90;39.75;0.90;40.12;0.90;40.31;1.00;40.50;0.90;40.88;0.90;41.25;0.90;41.62;0.90;42.00;1.00;42.00;0.90;42.38;0.90;42.75;0.90;43.12;0.90;43.50;1.00;43.50;0.90;43.88;0.90;44.25;0.90;44.62;0.90;45.00;1.00;45.00;0.90;45.38;0.90;45.75;0.90;46.12;0.90;46.50;1.00;46.50;0.90;46.88;0.90;47.25;0.90;47.62;0.90;48.00;1.00;48.00;0.90;48.38;0.90;48.75;0.90;49.12;0.90;49.50;0.80;49.88;0.80;50.25;0.80;50.62;0.80;51.00;0.80;51.38;0.80;51.75;0.80;52.12;0.80;52.50;0.80;52.88;0.80;53.25;0.80;53.62;0.80;54.00;0.80;54.38;0.80;54.75;0.80;55.12;0.80;55.50;0.80;55.88;0.80;56.25;0.80;56.62;0.80;57.00;0.80;57.38;0.80;57.75;0.80;58.12;0.80;58.50;0.80;58.88;0.80;59.25;0.80;59.62;0.80;60.00;0.80;60.38;0.80;60.75;0.80;61.12;0.80;61.50;0.80;61.88;0.80;62.25;0.80;62.62;0.80;63.00;0.80;63.38;0.80;63.75;0.80;64.12;0.80;64.50;0.80;64.88;0.80;65.25;0.80;65.62;0.80;66.00;0.80;66.38;0.80;66.75;0.80;67.12;0.80;67.50;0.80;67.88;0.80;68.25;0.80;68.62;0.80;69.00;0.80;69.38;0.80;69.75;0.80;70.12;0.80;70.50;0.80;70.88;0.80;71.25;0.80;71.62;0.80;72.00;0.80;72.38;0.80;72.75;0.80;73.12;0.80;73.50;1.00;73.50;0.80;73.88;0.80;74.06;0.80;74.44;0.80;74.62;0.80;75.00;0.80;75.19;0.80;75.56;0.80;75.75;0.80;76.12;0.80;76.31;0.80;76.50;0.80;76.88;0.80;77.06;0.80;77.44;0.80;77.62;0.80;78.00;0.80;78.19;0.80;78.38;0.80;78.75;0.80;78.94;0.80;79.31;0.80;79.50;0.80;79.88;0.80;80.06;0.80;80.25;0.80;80.62;0.80;80.81;0.80;81.19;0.80;81.38;0.80;81.75;0.80;81.94;0.80;82.31;0.80;82.50;0.80;82.88;0.80;83.06;0.80;83.25;0.80;83.62;0.80;83.81;0.80;84.19;0.80;84.38;0.80;84.75;0.80;84.94;0.80;85.31;0.80;85.50;0.80;85.69;1.00;85.69;0.90;85.88;0.80;85.88;0.90;86.25;0.90";
-    case 1: return "0.21;0.80;0.42;0.80;1.27;0.80;1.69;0.80;2.11;0.80;2.54;0.80;2.96;0.80;3.17;0.80;3.38;0.80;3.80;0.80;4.65;0.80;5.07;0.80;5.49;0.80;5.70;0.80;5.92;0.80;6.34;0.80;6.55;0.80;6.76;0.80;7.18;0.80;8.03;0.80;8.45;0.80;8.87;0.80;9.30;0.80;9.72;0.80;9.93;0.80;10.14;0.80;10.56;0.80;11.41;0.80;11.83;0.80;12.25;0.80;12.46;0.80;12.68;0.80;13.10;0.80;13.31;0.80;13.52;0.80;13.52;0.90;13.94;0.90;13.94;1.00;14.58;0.90;14.79;1.00;14.79;0.90;15.21;0.90;15.63;1.00;15.63;0.90;16.06;0.90;16.48;0.90;16.48;1.00;16.69;0.90;16.90;0.90;17.32;1.00;17.32;0.90;17.96;0.90;18.17;1.00;18.17;0.90;18.59;0.90;19.01;1.00;19.01;0.90;19.44;0.90;19.86;0.90;19.86;1.00;20.07;0.90;20.28;0.90;20.70;0.90;20.70;1.00;21.34;0.90;21.55;1.00;21.55;0.90;21.97;0.90;22.39;0.90;22.39;1.00;22.82;0.90;23.24;0.90;23.24;1.00;23.45;0.90;23.66;0.90;24.08;0.90;24.08;1.00;24.72;0.90;24.93;1.00;24.93;0.90;25.35;0.90;25.77;1.00;25.77;0.90;26.20;0.90;26.62;1.00;26.62;0.90;26.83;0.90;27.04;0.90;27.46;0.90;27.46;1.00;28.10;0.90;28.31;0.90;28.31;1.00;28.73;0.90;29.15;1.00;29.15;0.90;29.58;0.90;30.00;1.00;30.00;0.90;30.21;0.90;30.42;0.90;30.85;1.00;30.85;0.90;31.48;0.90;31.69;1.00;31.69;0.90;32.11;0.90;32.54;1.00;32.54;0.90;32.96;0.90;33.38;1.00;33.38;0.90;33.59;0.90;33.80;0.90;34.23;0.90;34.23;1.00;34.86;0.90;35.07;1.00;35.07;0.90;35.49;0.90;35.92;1.00;35.92;0.90;36.34;0.90;36.76;1.00;36.76;0.90;36.97;0.90;37.18;0.90;37.61;1.00;37.61;0.90;38.24;0.90;38.45;1.00;38.45;0.90;38.87;0.90;39.30;1.00;39.30;0.90;39.72;0.90;40.14;1.00;40.14;0.90;40.35;0.90;40.56;0.90;40.99;0.90;41.62;0.80;41.83;0.80;42.04;0.80;42.25;0.80;42.68;0.80;42.89;0.80;43.10;0.80;43.52;0.80;43.73;0.80;43.94;0.80;44.37;0.80;45.00;0.80;45.21;0.80;45.42;0.80;45.63;0.80;46.06;0.80;46.27;0.80;46.48;0.80;46.90;0.80;47.11;0.80;47.32;0.80;47.75;0.80;48.38;0.80;48.59;0.80;48.80;0.80;49.01;0.80;49.44;0.80;49.65;0.80;49.86;0.80;50.28;0.80;50.49;0.80;50.70;0.80;51.13;0.80;51.76;0.80;51.97;0.80;52.18;0.80;52.39;0.80;52.82;0.80;53.03;0.80;53.24;0.80;53.66;0.80;53.87;0.80;54.08;0.90;54.51;1.00;54.51;0.90;55.14;0.90;55.35;0.90;55.35;1.00;55.56;0.90;55.77;0.90;56.20;1.00;56.20;0.90;56.41;0.90;56.62;0.90;57.04;1.00;57.04;0.90;57.25;0.90;57.46;0.90;57.89;1.00;57.89;0.90;58.52;0.90;58.73;1.00;58.73;0.90;58.94;0.90;59.15;0.90;59.58;1.00;59.58;0.90;59.79;0.90;60.00;0.90;60.42;1.00;60.42;0.90;60.63;0.90;60.85;0.90;61.27;0.90;61.27;1.00;61.90;0.90;62.11;1.00;62.11;0.90;62.32;0.90;62.54;0.90;62.96;1.00;62.96;0.90;63.17;0.90;63.38;0.90;63.80;1.00;63.80;0.90;64.01;0.90;64.23;0.90;64.65;0.90;64.65;1.00;65.28;0.90;65.49;0.90;65.49;1.00;65.70;0.90;65.92;0.90;66.34;1.00;66.34;0.90;66.55;0.90;66.76;0.90;67.18;1.00;67.18;0.90;67.39;0.90;67.61;0.90;67.61;0.80;68.03;0.90;68.03;0.80;68.45;0.90;68.45;0.80;68.66;0.80;68.87;0.80;69.08;0.80;69.30;0.80;69.72;0.80;70.14;0.80;70.35;0.80;70.56;0.80;70.77;0.80;70.99;0.80;71.41;0.80;71.83;0.80;72.04;0.80;72.25;0.80;72.46;0.80;72.68;0.80;73.10;0.80;73.52;0.80;74.37;0.80;74.79;0.80;75.21;0.80;75.42;0.80;75.63;1.00;75.63;0.80;75.85;0.80;76.06;0.80;76.48;0.80;76.48;1.00;76.90;0.80;77.11;0.80;77.32;1.00;77.32;0.80;77.54;0.80;77.75;0.80;78.17;1.00;78.17;0.80;78.59;0.80;78.80;0.80;79.01;1.00;79.01;0.80;79.23;0.80;79.44;0.80;79.86;1.00;79.86;0.80;80.70;1.00;81.13;0.90;81.55;1.00;81.55;0.90;81.97;0.90";
-    case 2: return "1.66;1.00;2.02;0.80;2.21;0.80;2.58;0.80;3.50;0.80;3.68;0.80;4.05;0.80;4.97;0.80;5.15;0.80;5.52;0.80;6.44;0.80;6.63;0.80;6.99;0.80;7.36;1.00;7.91;0.80;8.10;0.80;8.47;0.80;9.39;0.80;9.57;0.80;9.94;0.80;10.86;0.80;11.04;0.80;11.41;0.80;12.33;0.80;12.52;0.80;12.88;0.80;13.80;0.80;13.99;0.80;14.17;0.80;15.28;0.80;15.46;0.80;15.83;0.80;16.75;0.80;16.93;0.80;17.30;0.80;18.22;0.80;18.40;0.80;18.77;0.80;19.14;1.00;19.14;0.90;19.69;0.90;19.88;0.90;20.25;0.90;20.43;0.90;20.80;0.90;21.17;0.90;21.35;0.90;21.72;0.90;22.09;0.90;22.64;0.90;22.82;0.90;23.19;0.90;23.37;0.90;23.74;0.90;24.11;0.90;24.29;0.90;24.66;0.90;25.03;0.90;25.58;0.90;25.77;0.90;26.13;0.90;26.32;0.90;26.69;0.90;27.06;0.90;27.24;0.90;27.61;0.90;27.98;0.90;28.16;0.90;28.53;0.90;28.71;0.90;29.08;0.90;29.26;0.90;29.63;0.90;29.82;0.90;30.18;0.90;30.55;0.90;31.10;0.80;31.29;0.80;31.47;0.80;31.84;0.80;32.02;0.80;32.39;0.80;32.76;0.80;33.13;0.80;33.50;0.80;34.42;0.80;34.79;0.80;35.15;0.80;35.52;0.80;35.89;0.80;36.07;0.80;36.44;0.80;36.81;0.80;37.36;0.80;37.73;0.80;38.10;0.80;38.28;0.80;38.65;0.80;39.02;0.80;39.39;0.80;40.31;0.80;40.67;0.80;41.04;0.80;41.41;0.80;41.78;0.80;41.96;0.80;42.33;0.80;43.07;1.00;43.07;0.90;43.44;0.90;43.62;0.90;43.99;0.90;44.36;0.90;44.72;0.90;45.09;0.90;45.46;0.90;45.83;1.00;45.83;0.80;46.01;0.80;46.20;0.80;46.38;0.80;46.56;0.80;46.75;0.80;46.93;0.80;47.12;0.80;47.30;0.80;47.48;0.80;48.96;0.90;49.33;0.90;49.51;0.90;49.88;0.90;50.25;0.90;50.61;0.90;50.98;0.90;51.35;0.90;51.72;0.80;51.90;0.80;52.09;0.80;52.27;0.80;52.45;0.80;52.64;0.80;52.82;0.80;53.01;0.80;53.19;0.80;53.37;0.80;54.85;0.90;55.21;0.90;57.79;0.90;58.16;0.90;58.34;0.80;58.53;0.80;58.71;0.80;58.90;0.80;59.08;0.80;59.26;0.80;60.74;0.90;61.10;0.90;61.29;0.90;61.66;0.90;62.02;0.90;62.39;0.90;62.76;0.90;63.13;0.90;63.50;0.80;63.68;0.80;63.87;0.80;64.05;0.80;64.23;0.80;64.42;0.80;64.60;0.80;64.79;0.80;64.97;0.80;65.15;0.80;66.26;1.00;68.28;0.80;68.47;0.80;68.83;0.80;69.75;0.80;69.94;0.80;70.31;0.80;71.23;0.80;71.41;0.80;71.78;0.80;72.70;0.80;72.88;0.80;73.25;0.80;74.17;0.80;74.36;0.80;74.72;0.80;75.64;0.80;75.83;0.80;76.20;0.80;76.38;0.80;76.75;0.80;77.12;0.80;77.30;0.80;77.67;0.80;78.04;1.00;78.04;0.90;78.59;0.90;78.77;0.90;79.14;0.90;79.33;0.90;79.69;0.90;80.06;0.90;80.25;0.90;80.61;0.90;80.98;0.90;81.53;0.90;81.72;0.90;82.09;0.90;82.27;0.90;82.64;0.90;83.01;0.90;83.19;0.90;83.56;0.90;84.11;0.90;84.48;0.90;84.66;0.90;85.03;0.90;85.21;0.90;85.58;0.90;85.95;0.90;86.13;0.90;86.50;0.90;86.87;0.90;87.06;0.90;87.42;0.90;87.61;0.90;87.98;0.90;88.16;0.90;88.53;0.90;88.71;0.90;89.08;0.90;89.45;0.90;89.82;1.00";
-    case 3: return "0.21;0.80;0.41;0.80;0.52;0.80;0.83;0.80;1.14;0.80;1.34;0.80;1.55;0.80;1.76;0.80;2.07;0.80;2.38;0.80;2.90;0.80;3.10;0.80;3.31;0.80;3.52;0.80;3.62;0.80;3.93;0.80;4.03;0.80;4.55;0.80;4.76;0.80;4.97;0.80;5.17;0.80;5.38;0.80;5.69;0.80;6.10;0.80;6.31;0.80;6.52;0.80;6.83;0.80;7.03;0.80;7.14;0.80;7.45;0.80;7.86;0.80;8.07;0.80;8.28;0.80;8.48;0.80;8.79;0.80;9.10;0.80;9.52;0.80;9.72;0.80;9.93;0.80;10.03;0.80;10.34;0.80;10.55;0.80;10.76;0.80;11.07;0.80;11.28;0.80;11.59;0.80;11.79;0.80;12.00;0.80;12.31;0.80;12.72;0.80;12.93;0.80;13.24;0.80;13.24;1.00;13.24;0.90;13.45;0.80;13.66;0.90;13.66;0.80;13.86;0.80;14.07;0.80;14.07;0.90;14.38;0.80;14.48;0.90;14.69;0.80;14.90;0.80;14.90;0.90;15.00;0.80;15.31;0.90;15.41;0.80;15.72;0.90;15.72;0.80;16.14;0.90;16.14;0.80;16.34;0.80;16.55;0.90;16.55;0.80;16.76;0.80;16.97;0.80;16.97;0.90;17.07;0.80;17.38;0.80;17.38;0.90;17.79;0.80;17.79;0.90;18.00;0.80;18.10;0.90;18.21;0.80;18.41;0.80;18.62;0.90;18.72;0.80;18.93;0.90;19.03;0.80;19.34;0.90;19.45;0.80;19.66;0.80;19.76;0.90;19.86;0.80;20.07;0.80;20.17;0.90;20.28;0.80;20.48;0.80;20.59;0.90;20.69;0.80;21.00;0.90;21.00;0.80;21.31;0.80;21.52;0.90;21.52;0.80;21.72;0.80;21.83;0.90;22.03;0.80;22.24;0.90;22.24;0.80;22.66;0.90;22.76;0.80;22.97;0.80;23.07;0.90;23.17;0.80;23.28;0.80;23.48;0.90;23.48;0.80;23.69;0.80;24.00;0.90;24.00;0.80;24.31;0.90;24.31;0.80;24.52;0.80;24.72;0.80;24.83;0.90;25.03;0.80;25.14;0.90;25.34;0.80;25.55;0.90;25.55;0.80;25.97;0.90;26.07;0.80;26.17;0.80;26.38;0.90;26.38;0.80;26.69;0.80;28.14;0.90;28.14;1.00;28.24;0.80;28.55;0.90;28.86;0.90;29.17;0.90;29.59;0.90;29.79;0.90;29.79;1.00;30.21;0.90;30.52;0.90;30.83;0.90;31.24;0.90;31.45;1.00;31.45;0.90;31.86;0.90;32.28;0.90;32.48;0.90;32.90;0.90;33.10;1.00;33.10;0.90;33.52;0.90;33.93;0.90;34.34;0.90;34.55;0.90;34.66;0.90;34.76;1.00;35.17;0.90;35.48;0.90;35.79;0.90;36.21;0.90;36.31;1.00;36.41;0.90;36.83;0.90;37.24;0.90;37.55;0.90;37.86;0.90;37.97;1.00;38.07;0.90;38.48;0.90;38.90;0.90;39.10;0.90;39.52;0.90;39.72;0.90;39.72;1.00;40.03;0.90;40.55;0.90;40.97;0.90;41.17;0.90;41.38;1.00;41.38;0.90;41.79;0.80;41.79;0.90;42.00;0.80;42.10;0.80;42.21;0.90;42.41;0.90;42.83;0.90;43.03;1.00;43.03;0.90;43.24;0.80;43.45;0.90;43.55;0.80;43.76;0.80;43.76;0.90;44.07;0.90;44.48;0.90;44.69;0.90;44.69;1.00;44.79;0.80;45.00;0.80;45.10;0.90;45.31;0.80;45.52;0.80;45.52;0.90;45.72;0.90;46.14;0.90;46.34;1.00;46.34;0.90;46.55;0.80;46.76;0.90;46.76;0.80;47.07;0.80;47.17;0.90;47.59;0.90;47.79;0.90;48.00;1.00;48.00;0.90;48.10;0.80;48.41;0.80;48.41;0.90;48.62;0.80;48.72;0.80;48.83;0.90;49.03;0.90;49.45;0.90;49.66;1.00;49.66;0.90;49.76;0.80;50.07;0.90;50.17;0.80;50.38;0.80;50.48;0.90;50.69;0.90;51.10;0.90;51.31;1.00;51.31;0.90;51.41;0.80;51.62;0.80;51.72;0.90;51.93;0.80;52.03;0.80;52.14;0.90;52.34;0.90;52.76;0.90;52.97;0.90;52.97;1.00;53.07;0.80;53.38;0.80;53.38;0.90;53.69;0.80;53.79;0.90;54.21;0.90;54.41;0.90;54.62;1.00;54.62;0.90;55.34;0.90;55.55;0.90;55.86;0.90;56.07;0.90;56.28;0.90;56.79;0.90;57.31;0.90;57.52;0.90;57.72;0.90;57.93;0.90;58.55;0.90;58.76;0.90;58.97;0.90;59.17;0.90;59.38;0.90;59.59;0.90;60.10;0.90;60.31;0.90;60.83;0.90;61.03;0.90;61.24;0.90;61.86;0.90;62.07;0.90;62.28;0.90;62.48;0.90;62.69;0.90;62.90;0.90;63.41;0.90;63.93;0.90;64.03;0.90;64.34;0.90;64.55;0.90;65.17;0.90;65.38;0.90;65.59;0.90;65.79;0.90;66.00;0.90;66.21;0.90;66.83;0.90;66.93;0.90;67.45;0.90;67.66;0.90;67.86;0.90;68.07;0.90;68.48;0.80;68.79;0.80;69.00;0.80;69.21;0.80;69.52;0.80;69.72;0.80;70.24;0.80;70.66;0.80;70.97;0.80;71.07;0.80;71.28;0.80;72.00;0.80;72.21;0.80;72.41;0.80;72.52;0.80;72.83;0.80;72.93;0.80;73.55;0.80;73.86;0.80;74.17;0.80;74.48;0.80;74.69;0.80;75.21;0.80;75.41;0.80;75.62;0.80;75.93;0.80;76.03;0.80;76.34;0.80;76.86;0.80;77.28;0.80;77.59;0.80;77.79;0.80;78.00;0.80;78.52;0.80;78.72;0.80;78.93;0.80;79.24;0.80;79.45;0.80;79.66;0.80;80.17;0.80;80.38;0.80;80.79;0.80;81.00;0.80;81.10;1.00;81.10;0.90;81.21;0.80;81.83;0.80;81.93;0.90;82.03;0.80;82.14;0.90;82.34;0.80;82.34;0.90;82.55;0.80;82.55;0.90;82.76;0.90;82.76;0.80;82.97;0.80;83.28;0.90;83.48;0.80;83.79;0.90;83.90;0.80;84.00;0.90;84.10;0.80;84.21;0.90;84.31;0.80;84.41;0.90;84.62;0.80";
-    case 4: return "0.32;0.80;0.53;0.80;0.85;0.80;1.06;0.80;1.27;0.80;1.48;0.80;1.69;0.80;2.43;0.80;2.54;0.80;2.85;0.80;3.06;0.80;3.17;0.80;3.38;0.80;3.91;0.80;4.01;0.80;4.23;0.80;4.44;0.80;4.65;0.80;4.86;0.80;4.96;0.80;5.28;0.80;5.39;0.80;5.49;0.80;5.81;0.80;6.02;0.80;6.13;0.80;6.44;0.80;6.65;0.80;6.76;0.80;6.87;0.90;7.61;0.80;7.82;0.80;8.03;0.80;8.35;0.80;8.45;0.80;9.08;0.80;9.40;0.80;9.61;0.80;9.82;0.80;10.04;0.80;10.25;0.80;10.67;0.80;10.88;0.80;11.09;0.80;11.30;0.80;11.51;0.80;11.73;0.80;11.83;0.80;12.15;0.80;12.25;0.80;12.36;0.80;12.57;0.80;12.78;0.80;12.89;0.80;12.89;0.80;13.20;0.80;13.52;0.80;13.63;1.00;13.63;0.90;13.73;0.80;14.15;0.80;14.47;0.80;14.89;0.80;15.11;0.80;15.32;0.80;15.32;0.90;15.53;0.80;15.74;0.80;15.95;0.80;16.16;0.80;16.37;0.80;16.58;0.80;16.80;0.80;17.01;0.80;17.01;0.90;17.43;0.80;17.64;0.80;17.85;0.80;18.06;0.80;18.27;0.80;18.49;0.80;18.70;0.80;18.70;0.90;18.91;0.80;19.01;0.80;19.12;0.80;19.33;0.80;19.65;0.80;19.65;0.80;19.75;0.80;19.96;0.80;20.18;0.80;20.39;0.80;20.49;0.90;20.92;0.80;21.13;0.80;21.34;0.80;21.55;0.80;21.65;0.80;21.87;0.80;22.08;0.90;22.08;0.80;22.61;0.80;22.82;0.80;23.03;0.80;23.24;0.80;23.45;0.80;23.66;0.80;23.77;0.90;23.87;0.80;24.30;0.80;24.51;0.80;24.72;0.80;24.82;0.80;25.14;0.80;25.35;0.80;25.46;0.90;25.46;0.80;25.77;0.80;25.88;0.80;26.20;0.80;26.30;0.90;26.41;0.80;26.51;0.80;26.62;0.80;26.73;0.80;26.83;0.80;26.94;0.80;27.15;0.80;27.25;0.80;27.25;0.90;27.36;0.80;27.46;0.80;27.46;0.80;27.57;0.80;27.68;0.80;27.78;0.80;27.78;0.80;27.99;0.80;27.99;0.80;28.10;0.80;28.20;0.80;28.31;0.80;28.42;0.80;28.52;0.80;28.63;0.80;28.94;0.80;28.94;1.00;30.53;0.90;30.63;1.00;30.63;0.80;31.06;0.90;31.27;0.90;31.48;0.90;31.69;0.90;31.80;0.90;32.01;0.90;32.22;0.90;32.32;0.90;32.54;0.90;32.64;0.90;32.75;0.90;33.06;0.90;33.27;0.90;33.49;0.90;33.59;0.90;33.80;0.90;34.12;0.90;34.54;0.90;34.75;0.90;34.96;0.90;35.18;0.90;35.28;0.90;35.60;0.90;35.81;0.90;35.92;0.90;36.02;0.90;36.13;0.90;36.44;0.90;36.65;0.90;36.76;0.90;36.87;0.90;37.08;0.90;37.29;0.90;37.50;0.90;37.92;0.90;38.35;0.90;38.77;0.90;39.19;0.90;39.30;0.90;39.40;0.90;39.51;0.90;39.72;0.90;39.82;0.90;40.04;0.90;40.25;0.90;40.35;0.90;40.46;0.90;40.67;0.90;40.88;0.90;41.30;0.90;41.73;0.90;42.15;0.90;42.57;0.90;42.99;0.90;43.42;0.90;43.84;0.90;44.26;0.90;44.26;1.00;44.68;0.90;44.89;0.90;45.11;0.90;45.21;0.90;45.53;0.90;45.74;0.90;45.95;0.90;46.16;0.90;46.27;0.90;46.37;0.90;46.58;0.90;46.90;0.90;47.01;0.90;47.22;0.90;47.43;0.90;47.64;0.90;48.06;0.90;48.38;0.90;48.49;0.90;48.70;0.90;49.01;0.90;49.23;0.90;49.33;0.90;49.54;0.90;49.65;0.90;49.75;0.90;50.07;0.90;50.28;0.90;50.39;0.90;50.39;0.90;50.70;0.90;50.92;0.90;51.13;0.90;51.55;0.90;51.76;0.90;51.97;0.90;52.18;0.90;52.39;0.90;52.50;0.90;52.82;0.90;53.03;0.90;53.45;0.90;53.66;0.90;53.87;0.90;54.08;0.90;54.30;0.90;54.51;0.90;54.93;0.90;55.14;0.90;55.56;0.90;55.99;0.90;56.41;0.90;56.62;0.90;57.04;0.90;57.25;0.90;57.78;0.90;57.89;1.00;58.10;0.80;58.31;1.00;58.31;0.80;58.42;0.90;58.52;0.90;58.73;1.00;58.73;0.90;58.94;0.90;59.15;1.00;59.15;0.90;59.37;0.90;59.58;1.00;59.58;0.90;60.00;1.00;60.21;0.90;60.42;1.00;60.74;0.90;60.85;1.00;61.06;0.90;61.27;1.00;61.69;1.00;61.80;0.90;61.90;0.90;62.22;1.00;62.22;0.90;62.43;0.90;62.54;1.00;62.54;0.90;62.85;0.90;62.96;1.00;63.06;0.90;63.17;0.90;63.38;0.90;63.38;1.00;63.80;1.00;63.91;0.90;64.12;0.90;64.23;1.00;64.54;0.90;64.65;1.00;65.07;1.00;65.18;0.90;65.39;0.90;65.49;1.00;65.81;0.90;66.02;1.00;66.23;0.90;66.34;1.00;66.65;0.90;66.76;1.00;66.87;0.90;67.18;1.00;67.29;0.90;67.61;0.90;67.71;1.00;67.92;0.90;68.03;1.00;68.56;1.00;68.56;0.90;68.98;1.00;68.98;0.90;69.40;1.00;69.40;0.90;69.82;1.00;69.82;0.90;70.14;0.90;70.25;1.00;70.46;0.90;70.67;1.00;70.77;0.90;71.09;1.00;71.09;0.90;71.51;0.90;71.62;0.80;71.83;0.80;71.94;0.90;72.15;0.80;72.15;0.90;72.57;0.80;72.68;0.80;72.99;0.80;72.99;0.90;73.10;0.80;73.20;0.90;73.52;0.80;73.63;0.90;73.84;0.80;73.84;0.90;74.15;0.80;74.26;0.90;74.47;0.80;74.47;0.90;74.58;0.80;74.68;0.90;74.79;0.80;74.89;0.90;75.32;0.90;75.74;0.90;75.85;0.80;76.16;0.80;76.16;0.90;76.27;0.80;76.48;0.80;76.58;0.90;77.01;0.90;77.43;0.90;77.54;0.80;77.75;0.80;77.85;0.90;78.27;0.80;78.27;0.90;78.70;0.80;78.70;0.90;78.91;0.80;79.12;0.90;79.33;0.80;79.44;0.80;79.75;0.80;79.96;0.80;79.96;0.90;80.39;0.80;80.60;0.80;80.92;0.90;81.02;0.80;81.23;0.80;81.44;0.80;81.65;0.80;82.18;0.90;82.61;0.90;82.71;0.80;82.92;0.80;82.92;0.90;83.03;0.80;83.35;0.80";
-    case 5: return "0.35;0.80;0.53;0.80;0.88;0.80;1.24;0.80;1.59;0.80;1.76;0.80;2.12;0.80;2.47;0.80;2.65;0.80;2.82;0.80;3.00;0.80;3.35;0.80;3.71;0.80;4.06;0.80;4.24;0.80;4.59;0.80;4.94;0.80;5.29;0.80;5.47;0.80;5.65;0.80;5.82;0.80;6.18;0.80;6.53;0.80;6.88;0.80;7.24;0.80;7.41;0.80;7.76;0.80;8.12;0.80;8.29;0.80;8.47;0.80;8.65;0.80;9.00;0.80;9.35;0.80;9.71;0.80;9.88;0.80;10.24;0.80;10.59;0.80;10.94;0.80;11.12;0.80;11.29;0.80;11.29;0.90;11.47;0.80;11.65;0.90;11.82;0.80;12.00;0.90;12.18;0.80;12.35;0.90;12.53;0.80;12.71;0.90;12.88;0.80;13.06;0.80;13.06;0.90;13.41;0.90;13.41;0.80;13.76;0.80;13.76;0.90;13.94;0.80;14.12;0.90;14.12;0.80;14.29;0.80;14.47;0.90;14.65;0.80;14.82;0.90;15.00;0.80;15.18;0.90;15.35;0.80;15.53;0.80;15.53;0.90;15.88;0.80;15.88;0.90;16.24;0.80;16.24;0.90;16.59;0.80;16.59;0.90;16.76;0.80;16.94;0.80;16.94;0.90;17.12;0.80;17.29;0.90;17.47;0.80;17.65;0.90;17.82;0.80;18.00;0.90;18.18;0.80;18.35;0.90;18.53;0.80;18.71;0.80;18.71;0.90;19.06;0.80;19.06;0.90;19.41;0.80;19.41;0.90;19.59;0.80;19.76;0.80;19.76;0.90;19.94;0.80;20.12;0.90;20.29;0.80;20.47;0.90;20.65;0.80;20.82;0.90;21.00;0.80;21.18;0.80;21.18;0.90;21.53;0.80;21.53;0.90;21.88;0.80;21.88;0.90;22.24;0.90;22.24;0.80;22.41;0.80;22.59;0.90;22.59;0.80;22.76;0.80;24.00;0.90;24.00;1.00;24.18;0.80;24.35;1.00;24.35;0.90;24.71;1.00;24.71;0.90;25.06;1.00;25.06;0.90;25.41;1.00;25.41;0.90;25.76;0.90;25.94;1.00;26.12;0.90;26.47;1.00;26.47;0.90;26.82;0.90;26.82;1.00;27.18;1.00;27.18;0.90;27.53;1.00;27.53;0.90;27.88;1.00;27.88;0.90;28.24;1.00;28.24;0.90;28.59;0.90;28.76;1.00;28.94;0.90;29.29;1.00;29.29;0.90;29.65;0.90;29.65;1.00;30.00;1.00;30.00;0.90;30.35;1.00;30.35;0.90;30.71;1.00;30.71;0.90;31.06;1.00;31.06;0.90;31.41;0.90;31.59;1.00;31.76;0.90;32.12;1.00;32.12;0.90;32.47;0.90;32.47;1.00;32.82;1.00;32.82;0.90;33.18;1.00;33.18;0.90;33.53;1.00;33.53;0.90;33.88;1.00;33.88;0.90;34.24;0.90;34.41;1.00;34.59;0.90;34.94;1.00;34.94;0.90;35.29;0.90;35.29;1.00;35.65;1.00;35.65;0.90;36.00;1.00;36.00;0.90;36.35;1.00;36.35;0.90;36.71;1.00;36.71;0.90;37.06;0.90;37.24;1.00;37.41;0.90;37.76;1.00;37.76;0.90;38.12;0.90;38.12;1.00;38.47;0.90;38.47;1.00;38.82;1.00;38.82;0.90;39.18;1.00;39.18;0.90;39.53;1.00;39.53;0.90;39.88;0.90;40.06;1.00;40.24;0.90;40.59;1.00;40.59;0.90;40.94;0.90;40.94;1.00;41.29;1.00;41.29;0.90;41.65;1.00;41.65;0.90;42.00;1.00;42.00;0.90;42.35;1.00;42.35;0.90;42.71;0.90;42.88;1.00;43.06;0.90;43.41;1.00;43.41;0.90;43.76;0.90;43.76;1.00;44.12;1.00;44.12;0.90;44.47;1.00;44.47;0.90;44.82;1.00;44.82;0.90;45.18;1.00;45.18;0.90;45.53;0.90;45.71;1.00;45.88;0.90;46.24;1.00;46.24;0.90;46.59;0.90;46.59;1.00;46.94;1.00;46.94;0.90;47.29;1.00;47.29;0.90;47.65;1.00;47.65;0.90;48.00;1.00;48.00;0.90;48.35;0.90;48.53;1.00;48.71;0.90;49.06;1.00;49.06;0.90;49.41;0.90;49.41;1.00;49.76;1.00;49.76;0.90;50.12;1.00;50.12;0.90;50.47;1.00;50.47;0.90;50.82;1.00;50.82;0.90;51.18;0.90;51.35;1.00;51.53;0.90;51.88;1.00;51.88;0.90;52.24;0.90;52.24;1.00;52.59;0.90;52.59;1.00;52.94;1.00;52.94;0.90;53.29;1.00;53.29;0.90;53.65;1.00;53.65;0.90;54.00;0.90;54.18;1.00;54.35;0.90;54.71;1.00;54.71;0.90;55.06;1.00;55.06;0.90;55.41;1.00;55.41;0.90;55.76;1.00;55.76;0.90;56.12;1.00;56.12;0.90;56.47;1.00;56.47;0.90;56.82;0.90;57.00;1.00;57.18;0.90;57.53;1.00;57.53;0.90;57.88;1.00;57.88;0.90;58.24;1.00;58.24;0.90;58.59;1.00;58.59;0.90;58.94;1.00;58.94;0.90;59.29;1.00;59.29;0.90;59.65;0.90;59.82;1.00;60.00;0.90;60.35;1.00;60.35;0.90;60.71;1.00;60.71;0.90;61.06;1.00;61.06;0.90;61.41;1.00;61.41;0.90;61.76;1.00;61.76;0.90;62.12;1.00;62.12;0.90;62.47;0.90;62.65;1.00;62.82;0.90;63.18;1.00;63.18;0.90;63.53;1.00;63.53;0.90;63.88;0.90;63.88;1.00;64.24;0.90;64.24;1.00;64.59;1.00;64.59;0.90;64.94;1.00;64.94;0.90;65.29;0.90;65.47;1.00;65.65;0.90;66.00;1.00;66.00;0.90;66.35;0.90;66.35;1.00;66.71;1.00;66.71;0.90;67.06;1.00;67.06;0.90;67.41;1.00;67.41;0.90;67.76;1.00;67.76;0.90;68.12;0.80;68.12;0.90;68.29;1.00;68.47;0.90;68.47;0.80;68.65;1.00;68.82;0.80;69.00;0.80;69.18;0.80;69.35;0.80;69.71;0.80;70.06;0.80;70.41;0.80;70.76;0.80;70.94;0.80;71.29;0.80;71.65;0.80;71.82;0.80;72.00;0.80;72.18;0.80;72.53;0.80;72.88;0.80;73.24;0.80;73.41;0.80;73.76;0.80;74.12;0.80;74.29;0.80;74.65;0.80;74.82;0.80;75.00;0.80;75.35;0.80;75.53;0.80;75.71;0.80;75.88;0.80;76.41;0.80;76.59;0.80;76.94;0.80;77.29;0.80;77.47;0.80;77.65;0.80;77.82;0.80;78.18;0.80;78.35;0.80;78.53;0.80;78.88;0.80;79.06;0.80;79.24;0.80;79.41;0.80;79.76;0.80;80.12;0.80;80.29;0.80;80.47;0.80;80.65;0.80";
-    case 6: return "0.00;0.90;0.34;0.90;0.67;0.90;1.01;0.90;1.35;0.90;1.69;0.90;2.02;0.90;2.36;0.90;2.70;0.90;3.03;0.90;3.37;0.90;3.71;0.90;4.04;0.90;4.38;0.90;4.72;0.90;5.39;0.90;5.73;0.90;6.07;0.90;6.40;0.90;6.74;0.90;7.08;0.90;7.42;0.90;7.75;0.90;8.09;0.90;8.43;0.90;8.76;0.90;9.10;0.90;9.44;0.90;9.78;0.90;10.11;0.90;10.45;0.90;10.79;1.00;10.79;0.90;11.12;0.90;11.46;0.90;11.80;0.90;12.13;0.90;12.47;0.90;12.81;0.90;13.15;0.90;13.48;0.90;13.82;0.90;14.16;0.90;14.49;0.90;14.83;0.90;15.17;0.90;15.51;0.90;15.84;0.90;16.18;0.90;16.52;0.90;16.85;0.90;17.19;0.90;17.53;0.90;17.87;0.90;18.20;0.90;18.54;0.90;18.88;0.90;19.21;0.90;19.55;0.90;19.89;0.90;20.22;0.90;20.56;0.90;20.90;0.90;21.24;0.90;21.57;1.00;21.57;0.90;21.91;0.90;22.25;0.90;22.58;0.90;22.92;0.90;23.26;0.90;23.60;0.90;23.93;0.90;24.27;0.90;24.61;0.90;24.94;0.90;25.28;0.90;25.62;0.90;25.96;0.90;26.29;0.90;26.63;0.90;26.97;0.90;27.30;0.90;27.64;0.90;27.98;0.90;28.31;0.90;28.65;0.90;28.99;0.90;29.33;0.90;29.66;0.90;30.00;0.90;30.34;0.90;30.67;0.90;31.01;0.90;31.35;0.90;31.69;0.90;32.02;0.90;32.36;1.00;32.36;0.90;32.70;0.90;33.03;0.90;33.71;0.90;34.04;0.90;34.38;0.90;34.72;0.90;35.06;0.90;35.39;0.90;35.73;0.90;36.40;0.90;36.74;0.90;37.08;0.90;37.42;0.90;37.75;0.90;38.09;0.90;38.43;0.90;39.10;0.90;39.44;0.90;39.78;0.90;40.11;0.90;40.45;0.90;40.79;0.90;41.12;0.90;41.80;0.90;42.13;0.90;42.47;0.90;42.81;0.90;43.15;1.00;43.15;0.90;43.48;0.90;43.82;0.90;44.49;0.90;44.83;0.90;45.17;0.90;45.51;0.90;45.84;0.90;46.18;0.90;46.52;0.90;47.19;0.90;47.53;0.90;47.87;0.90;48.20;0.90;48.54;0.90;48.88;0.90;49.21;0.90;49.89;0.90;50.22;0.90;50.56;0.90;50.90;0.90;51.24;0.90;51.57;0.90;51.91;0.90;52.58;0.90;52.92;0.90;53.26;0.90;53.60;0.90;53.93;1.00;53.93;0.90;54.27;0.90;54.61;0.90;54.94;0.90;55.28;0.90;55.62;0.90;55.96;0.90;56.29;0.90;56.63;0.90;56.97;0.90;57.30;0.90;57.64;0.90;57.98;0.90;58.31;0.90;58.65;0.90;59.33;0.90;59.66;0.90;60.00;0.90;60.34;0.90;60.67;0.90;61.01;0.90;61.35;0.90;61.69;0.90;62.02;0.90;62.36;0.90;62.70;0.90;63.03;0.90;63.37;0.90;63.37;0.90;63.71;0.90;64.04;0.90;64.38;0.90;64.72;1.00;64.72;0.90;65.39;0.90;65.73;0.90;66.07;0.90;66.40;0.90;66.74;0.90;67.08;0.90;67.42;0.90;68.09;0.90;68.43;0.90;68.76;0.90;69.10;0.90;69.44;0.90;69.78;0.90;70.11;0.90;70.79;0.90;71.12;0.90;71.46;0.90;71.80;0.90;72.13;0.90;72.47;0.90;72.81;0.90;73.48;0.90;73.82;0.90;74.16;0.90;74.49;0.90;74.83;0.90;75.17;0.90;75.51;1.00;75.51;0.90;75.84;0.90;76.18;0.90;76.52;0.90;76.85;0.90;77.19;0.90;77.53;0.90;77.87;0.90;78.20;0.90;78.54;0.90;78.88;0.90;79.21;0.90;79.55;0.90;79.89;0.90;80.22;0.90;80.56;0.90;80.90;0.90;81.24;0.90;81.57;0.90;81.91;0.90;82.25;0.90;82.58;0.90;82.92;0.90;83.26;0.90;83.60;0.90;83.93;0.90;84.27;0.90;84.61;0.90;84.94;0.90;85.28;0.90;85.62;0.90;85.96;0.90;86.29;1.00;86.29;0.90;86.63;0.90;86.97;0.90;87.30;0.90;87.64;0.90";
-    case 7: return "1.78;0.90;2.62;0.90;3.41;0.90;3.72;0.90;4.04;0.90;4.25;0.90;5.14;0.90;5.93;0.90;6.77;0.90;7.08;0.90;7.40;0.90;7.60;0.90;8.50;0.90;9.28;0.90;10.12;0.90;10.44;0.90;10.75;0.90;11.01;0.90;11.38;0.90;11.80;0.90;12.64;0.90;13.48;0.90;13.90;0.90;14.32;0.90;15.10;1.00;15.21;0.90;16.00;0.90;16.84;0.90;17.15;0.90;17.47;0.90;17.67;0.90;18.62;0.90;19.41;0.90;20.24;0.90;20.56;0.90;20.87;0.90;21.08;0.90;21.92;0.90;22.71;0.90;23.55;0.90;23.92;0.90;24.23;0.90;24.44;0.90;24.81;0.90;25.23;0.90;26.01;0.90;26.91;0.90;27.33;0.90;27.74;0.90;28.53;1.00;28.64;0.90;29.06;0.90;29.32;1.00;29.48;0.90;29.90;0.90;30.16;1.00;30.31;0.90;30.42;1.00;30.79;1.00;30.79;0.90;31.05;1.00;31.15;0.90;31.63;0.90;31.89;1.00;31.99;0.90;32.41;0.90;32.67;1.00;32.83;0.90;33.30;0.90;33.51;1.00;33.72;0.90;33.83;1.00;34.14;1.00;34.14;0.90;34.35;1.00;34.51;0.90;34.93;0.90;35.24;1.00;35.35;0.90;35.77;0.90;36.03;1.00;36.19;0.90;36.66;0.90;36.87;1.00;37.03;0.90;37.19;1.00;37.50;0.90;37.50;1.00;37.76;1.00;37.87;0.90;38.13;1.00;38.29;0.90;38.65;1.00;38.71;0.90;39.13;0.90;39.39;1.00;39.55;0.90;39.97;0.90;40.23;1.00;40.44;0.90;40.65;1.00;40.80;0.90;41.07;1.00;41.28;0.90;41.70;0.90;41.91;1.00;42.12;0.90;42.53;0.90;42.74;1.00;42.90;0.90;43.32;0.90;43.58;1.00;43.79;0.90;43.85;1.00;44.16;1.00;44.16;0.90;44.42;1.00;44.58;0.90;45.00;0.90;45.31;1.00;45.47;0.90;45.89;0.90;46.10;1.00;46.31;0.90;46.73;0.90;46.94;1.00;47.15;0.90;47.26;1.00;47.57;1.00;47.57;0.90;47.83;1.00;47.99;0.90;48.36;0.90;48.62;1.00;48.78;0.90;49.20;0.90;49.46;1.00;49.67;0.90;50.09;0.90;50.35;1.00;50.51;0.90;50.66;1.00;50.93;1.00;50.93;0.90;51.19;1.00;51.35;0.90;51.56;1.00;51.71;0.90;51.98;1.00;52.13;0.90;52.60;0.90;52.76;1.00;52.97;0.90;53.39;0.90;53.65;1.00;53.81;0.90;54.07;1.00;54.28;0.90;54.49;1.00;54.65;0.90;55.38;1.00;55.49;0.90;55.91;0.90;56.38;0.90;56.75;0.90;57.17;0.90;57.59;0.90;58.01;0.90;58.43;0.90;58.85;0.90;59.27;0.90;59.63;0.90;60.10;0.90;60.47;0.90;60.89;0.90;61.31;0.90;62.20;0.90;62.62;0.90;63.04;0.90;63.46;0.90;63.83;0.90;64.30;0.90;64.72;0.90;65.14;0.90;65.56;0.90;65.93;0.90;66.40;0.90;66.77;0.90;67.19;0.90;67.60;0.90;68.02;0.90;68.81;1.00;68.92;0.90;69.34;0.90;69.76;0.90;70.17;0.90;70.59;0.90;71.01;0.90;71.43;0.90;71.85;0.90;72.27;0.90;72.69;0.90;73.11;0.90;73.58;0.90;74.00;0.90;74.37;0.90;74.84;0.90;75.63;0.90;76.05;0.90;76.52;0.90;76.89;0.90;77.31;0.90;77.73;0.90;78.20;0.90;78.62;0.90;78.99;0.90;79.41;0.90;79.83;0.90;80.24;0.90;80.66;0.90;81.14;0.90;81.50;0.90;81.92;0.90;82.19;1.00;82.40;0.90;82.60;0.90;82.97;0.90;83.02;1.00;83.18;0.90;83.39;0.90;83.86;0.90;83.86;1.00;84.02;0.90;84.23;0.90;84.65;0.90;84.76;1.00;84.86;0.90;85.07;0.90;85.28;0.90;85.59;1.00;85.59;0.90;85.80;0.90;85.96;0.90;86.38;1.00;86.38;0.90;86.59;0.90;86.75;0.90;87.17;0.90;87.27;1.00;87.38;0.90;87.59;0.90;88.01;0.90;88.06;1.00;88.22;0.90;88.43;0.90;88.69;0.90;88.85;0.90;88.90;1.00;89.06;0.90;89.32;0.90;89.74;0.90;89.74;1.00;89.90;0.90;90.10;0.90;90.52;0.90;90.58;1.00;90.73;0.90;90.94;0.90;91.36;0.90;91.42;1.00;91.57;0.90;91.78;0.90;91.99;0.90;92.26;1.00;92.41;0.90;92.62;0.90;93.09;1.00;93.09;0.90;93.25;0.90;93.46;0.90;93.93;0.90;93.93;1.00;94.09;0.90;94.35;0.90;94.62;0.90;94.77;1.00;94.83;0.90;94.98;0.90;95.35;0.90;95.56;0.90;95.61;1.00;95.77;0.90";
-    case 8: return "0.21;0.80;0.43;0.80;0.75;0.80;1.07;0.80;1.61;0.80;1.82;0.80;2.14;0.80;2.36;0.80;2.79;0.80;3.32;0.80;3.43;0.80;3.96;0.80;4.07;0.80;4.50;0.80;4.93;0.80;5.14;0.80;5.57;0.80;5.79;0.80;6.21;0.80;6.64;0.80;6.86;0.80;7.29;0.80;7.50;0.80;7.93;0.80;8.36;0.80;8.57;0.80;9.00;0.80;9.21;0.80;9.64;0.80;10.07;0.80;10.29;0.80;10.71;0.80;10.93;0.80;11.36;0.80;11.79;0.80;12.00;0.80;12.43;0.80;12.64;0.80;13.07;0.80;13.50;0.80;13.61;0.80;13.71;0.90;14.04;0.70;14.14;0.80;14.36;0.80;14.79;0.80;15.11;0.70;15.21;0.80;15.43;0.80;15.86;0.80;15.86;0.70;15.96;0.80;16.50;0.80;16.82;0.70;16.82;0.80;17.04;0.80;17.57;0.80;17.57;0.70;17.68;0.80;18.11;0.80;18.54;0.80;18.75;0.80;19.29;0.80;19.39;0.80;19.93;0.80;20.36;0.80;20.46;0.80;20.68;0.70;21.00;0.80;21.00;0.70;21.11;0.80;21.43;0.70;21.54;0.80;21.86;0.70;22.07;0.80;22.18;0.80;22.29;0.70;22.61;0.80;22.82;0.70;22.82;0.80;23.14;0.70;23.36;0.80;23.57;0.70;23.79;0.80;24.00;0.80;24.00;0.70;24.43;0.80;24.43;0.70;24.54;0.80;24.54;0.70;24.75;0.70;25.07;0.80;25.07;0.70;25.29;0.70;25.29;0.70;25.50;0.70;25.50;0.80;25.61;0.70;25.61;0.80;25.71;0.70;25.82;0.70;25.93;0.70;25.93;0.70;26.04;0.70;26.04;0.80;26.14;0.70;26.25;0.70;26.25;0.80;26.36;0.70;26.46;0.70;26.57;0.70;26.68;0.70;26.68;0.80;26.68;0.70;26.79;0.70;26.89;0.70;27.00;0.70;27.11;0.80;27.11;0.70;27.21;0.70;27.32;0.70;27.43;0.70;29.14;1.00;29.25;0.90;29.57;0.90;29.79;0.90;29.89;0.90;29.89;0.70;30.00;0.70;30.21;0.90;30.43;0.70;30.43;0.70;30.64;0.90;30.75;0.70;30.86;0.90;30.86;0.70;31.29;0.90;31.29;0.70;31.29;0.70;31.50;0.90;31.71;0.70;31.71;0.70;31.93;0.90;32.14;0.70;32.14;0.70;32.36;0.90;32.57;0.70;32.57;0.90;32.57;0.70;32.89;0.70;33.00;0.70;33.00;0.90;33.21;0.90;33.32;0.70;33.43;0.70;33.75;0.90;33.86;0.70;33.86;0.70;34.07;0.90;34.18;0.70;34.29;0.90;34.29;0.70;34.61;0.70;34.71;0.70;34.82;0.90;34.93;0.90;35.04;0.70;35.14;0.70;35.36;0.90;35.57;0.70;35.57;0.70;35.79;0.90;35.89;0.70;36.00;0.90;36.00;0.70;36.43;0.70;36.43;0.90;36.43;0.70;36.64;0.90;36.75;0.70;36.86;0.70;37.07;0.90;37.07;0.70;37.18;0.70;37.61;0.90;37.61;0.70;37.61;0.70;37.71;0.90;38.04;0.70;38.14;0.70;38.14;0.90;38.46;0.90;38.57;0.70;38.57;0.70;38.79;0.90;39.00;0.70;39.00;0.70;39.32;0.90;39.32;0.70;39.43;0.70;39.43;0.90;39.75;0.70;39.86;0.70;39.86;0.90;40.07;0.90;40.18;0.70;40.18;0.70;40.50;0.90;40.61;0.70;40.61;0.70;40.93;0.90;41.04;0.70;41.14;0.70;41.14;0.90;41.57;0.70;41.57;0.70;41.68;0.90;41.79;0.90;42.00;0.70;42.00;0.70;42.32;0.90;42.32;0.70;42.43;0.70;42.75;0.90;42.75;0.70;42.75;0.70;42.86;0.90;43.18;0.70;43.29;0.70;43.29;1.00;43.39;0.90;43.50;0.90;43.71;0.70;43.71;0.70;44.04;0.90;44.14;0.70;44.14;1.00;44.14;0.70;44.36;0.90;44.57;0.70;44.57;0.70;44.57;0.90;44.89;0.70;45.00;0.70;45.00;1.00;45.00;0.90;45.21;0.90;45.32;0.70;45.43;0.70;45.64;0.90;45.75;0.70;45.86;0.70;45.86;1.00;46.18;0.90;46.29;0.70;46.29;0.70;46.29;0.90;46.61;0.70;46.71;0.70;46.71;1.00;46.71;0.90;46.93;0.90;47.14;0.70;47.14;0.70;47.46;0.90;47.57;0.70;47.57;1.00;47.57;0.70;47.89;0.90;48.00;0.70;48.00;0.70;48.00;0.90;48.32;0.70;48.43;0.70;48.43;1.00;48.43;0.90;48.64;0.90;48.75;0.70;48.86;0.70;48.96;0.70;49.07;0.90;49.18;0.70;49.18;1.00;49.29;0.70;49.50;0.90;49.50;0.70;49.61;0.70;49.71;0.70;49.71;0.90;49.71;0.70;49.93;0.70;50.04;0.70;50.14;1.00;50.14;0.90;50.14;0.70;50.36;0.90;50.46;0.70;50.57;0.70;50.89;0.90;50.89;0.70;51.00;1.00;51.00;0.70;51.21;0.90;51.32;0.70;51.43;0.70;51.43;0.90;51.75;0.70;51.86;1.00;51.86;0.70;51.86;0.90;52.07;0.90;52.18;0.70;52.29;0.70;52.50;0.90;52.71;0.70;52.71;1.00;52.71;0.70;52.93;0.90;53.14;0.70;53.14;0.70;53.14;0.90;53.46;0.70;53.57;1.00;53.57;0.70;53.57;0.90;53.79;0.90;54.00;0.70;54.00;0.70;54.21;0.90;54.43;0.70;54.43;0.70;54.43;1.00;54.64;0.90;54.75;0.70;54.86;0.70;54.86;0.90;55.18;0.70;55.29;0.70;55.29;1.00;55.29;0.90;55.50;0.90;55.71;0.70;55.71;0.70;56.04;0.90;56.04;0.70;56.14;0.70;56.14;1.00;56.36;0.90;58.29;0.90;58.29;1.00;58.71;0.70;58.71;0.70;59.14;0.70;59.25;0.70;59.57;0.70;59.57;0.70;60.00;0.70;60.00;0.70;60.43;0.70;60.43;0.70;60.43;0.90;60.75;0.70;60.86;0.70;61.29;0.70;61.29;0.70;61.29;0.90;61.71;0.70;61.71;0.70;62.14;0.70;62.14;0.70;62.14;0.90;62.57;0.70;62.57;0.70;63.00;0.70;63.00;0.70;63.00;0.90;63.32;0.70;63.43;0.70;63.75;0.70;63.75;0.70;63.86;0.90;64.07;0.70;64.18;0.70;64.50;0.70;64.50;0.70;64.71;0.90;64.93;0.70;64.93;0.70;65.36;0.70;65.36;0.70;65.57;0.90;65.79;0.70;65.89;0.70;66.21;0.70;66.32;0.70;66.43;0.90;66.64;0.70;66.75;0.70;67.07;0.70;67.18;0.70;67.29;0.90;67.50;0.70;67.50;0.70;67.93;0.70;68.04;0.70;68.14;0.90;68.36;0.70;68.36;0.70;68.79;0.70;68.79;0.70;69.00;0.90;69.21;0.70;69.21;0.70;69.64;0.70;69.64;0.70;69.86;0.90;70.07;0.70;70.07;0.70;70.50;0.70;70.71;0.90;70.93;0.70;70.93;0.70;71.36;0.70;71.46;0.70;71.57;0.90;71.79;0.70;71.79;0.70;72.21;0.70;72.32;0.70;72.43;0.90;72.75;0.70;73.07;0.70;73.18;0.70;73.29;0.90;73.50;0.70;73.50;0.70;73.93;0.70;73.93;0.70;74.14;0.90;74.36;0.70;74.36;0.70;74.79;0.70;74.79;0.70;75.00;0.90;75.21;0.70;75.32;0.70;75.75;0.70;75.75;0.70;75.86;0.90;76.07;0.70;76.18;0.70;76.50;0.70;76.61;0.70;76.71;0.90;76.93;0.70;77.04;0.70;77.36;0.70;77.46;0.70;77.57;0.90;77.79;0.70;77.79;0.70;78.21;0.70;78.32;0.70;78.43;0.90;78.64;0.70;78.75;0.70;79.07;0.70;79.18;0.70;79.29;0.90;79.50;0.70;79.50;0.70;79.93;0.70;80.04;0.70;80.04;0.90;80.36;0.70;80.46;0.70;80.89;0.70;80.89;0.70;81.00;0.90;81.32;0.70;81.32;0.70;81.75;0.70;81.86;0.90;82.07;0.70;82.07;0.70;82.50;0.70;82.50;0.70;82.71;0.90;82.93;0.70;82.93;0.70;83.36;0.70;83.36;0.70;83.57;0.90;83.79;0.70;83.79;0.70;84.21;0.70;84.32;0.70;84.43;0.90;84.64;0.70;84.75;0.70;85.07;0.70;85.07;0.70;85.29;0.90;85.61;0.70;86.04;0.70;86.14;0.70;87.00;0.70;87.54;0.70";
-    case 9: return "0.23;0.80;0.35;0.80;0.69;0.80;0.92;0.80;1.15;0.80;1.38;0.80;1.62;0.80;1.85;0.80;2.19;0.80;2.54;0.80;2.88;0.80;3.23;0.80;3.46;0.80;3.69;0.80;4.04;0.80;4.38;0.80;4.62;0.80;4.85;0.80;5.08;0.80;5.31;0.80;5.54;0.80;5.88;0.80;6.23;0.80;6.46;0.80;6.81;0.80;7.04;0.80;7.38;0.80;7.38;0.90;7.73;0.80;8.08;0.80;8.42;0.80;8.77;0.80;9.00;0.80;9.23;0.80;9.58;0.80;9.92;0.80;10.27;0.80;10.62;0.80;10.85;0.80;11.08;0.80;11.42;0.80;11.77;0.80;12.00;0.80;12.23;0.80;12.46;0.80;12.69;0.80;12.92;0.80;13.27;0.80;13.62;0.80;13.85;0.80;14.19;0.80;14.54;0.80;14.77;0.90;14.77;0.80;15.12;0.80;15.46;0.80;15.81;0.80;16.15;0.80;16.38;0.80;16.62;0.80;16.96;0.80;17.31;0.80;17.65;0.80;18.00;0.80;18.23;0.80;18.46;0.80;18.81;0.80;19.04;0.80;19.38;0.80;19.62;0.80;19.85;0.80;20.08;0.80;20.31;0.80;20.65;0.80;21.00;0.80;21.23;0.80;21.58;0.80;21.81;0.80;22.15;0.80;22.15;0.90;22.50;0.80;22.85;0.80;23.08;0.80;23.42;0.80;23.77;0.80;24.00;0.80;24.35;0.80;24.69;0.80;24.92;0.80;25.27;0.80;25.50;0.80;25.85;0.80;26.08;0.80;26.31;0.80;26.54;0.80;26.77;0.80;27.00;0.80;27.23;0.80;27.46;0.80;27.69;0.80;27.92;0.80;28.15;0.80;28.27;0.80;28.38;0.80;28.50;0.80;28.62;0.80;28.73;0.80;28.73;0.80;28.85;0.80;28.96;0.80;28.96;0.80;29.08;0.80;29.19;0.80;29.31;0.80;29.54;0.90;29.65;0.70;29.65;0.70;29.77;0.70;30.00;0.90;30.00;0.70;30.12;0.70;30.23;0.70;30.35;0.70;30.35;0.70;30.46;0.90;30.58;0.70;30.69;0.70;31.38;0.70;31.38;0.90;31.38;0.70;31.50;0.70;31.62;0.70;31.73;0.70;31.85;0.70;31.96;0.70;32.08;0.70;32.31;0.90;32.31;0.70;32.42;0.70;32.54;0.70;32.65;0.70;32.65;0.70;32.77;0.70;33.23;0.90;33.23;0.70;33.23;0.70;33.35;0.70;33.46;0.70;33.58;0.70;33.58;0.70;33.69;0.90;33.81;0.70;33.81;0.70;33.92;0.70;34.04;0.70;34.15;0.90;34.15;0.70;34.27;0.70;34.38;0.70;34.38;0.70;34.50;0.70;35.08;0.90;35.08;0.70;35.19;0.70;35.31;0.70;35.42;0.70;35.42;0.70;35.54;0.70;36.00;0.90;36.00;0.70;36.12;0.70;36.23;0.70;36.23;0.70;36.35;0.70;36.58;0.90;36.58;0.70;36.58;0.70;36.69;0.70;36.92;0.70;36.92;0.90;37.04;0.70;37.15;0.70;37.27;0.70;37.38;0.70;37.38;0.90;37.38;0.70;37.62;0.70;37.62;0.70;37.85;0.70;37.85;0.70;37.85;0.90;37.96;0.70;38.77;0.70;38.77;0.90;38.88;0.70;38.88;0.70;38.88;0.70;39.00;0.70;39.12;0.70;39.23;0.70;39.35;0.70;39.35;0.70;39.69;0.90;39.69;0.70;39.81;0.70;39.92;0.70;40.04;0.70;40.04;0.70;40.15;0.70;40.27;0.70;40.62;0.90;40.62;0.70;40.73;0.70;40.73;0.70;40.85;0.70;40.96;0.70;41.08;0.90;41.19;0.70;41.19;0.70;41.31;0.70;41.42;0.70;41.54;0.90;41.54;0.70;41.65;0.70;41.65;0.70;41.77;0.70;42.46;0.70;42.46;0.90;42.58;0.70;42.58;0.70;42.81;0.70;42.92;0.70;43.04;0.70;43.38;0.90;43.38;0.70;43.50;0.70;43.62;0.70;43.62;0.70;43.85;0.70;43.85;0.90;43.96;0.70;43.96;0.70;44.08;0.70;44.31;0.70;44.31;0.90;44.42;0.70;44.54;0.70;44.54;0.70;44.77;0.70;44.77;0.90;44.88;0.70;45.00;0.70;45.23;0.70;45.23;0.90;45.23;0.70;45.35;0.70;46.15;0.90;46.15;0.70;46.27;0.70;46.38;0.70;46.50;0.70;46.62;0.70;46.73;0.70;46.73;0.70;47.08;0.90;47.19;0.70;47.31;0.70;47.42;0.70;47.54;0.70;48.00;0.70;48.00;0.70;48.00;0.90;48.12;0.70;48.12;0.70;48.46;0.70;48.46;0.90;48.46;0.70;48.81;0.70;48.92;0.70;48.92;0.90;48.92;0.70;49.15;0.70;49.85;0.70;49.96;0.90;49.96;0.70;50.08;0.70;50.19;0.70;50.31;0.70;50.42;0.70;50.77;0.90;50.77;0.70;50.88;0.70;51.00;0.70;51.00;0.70;51.12;0.70;51.23;0.70;51.23;0.90;51.46;0.70;51.69;0.70;51.69;0.90;51.92;0.70;52.04;0.70;52.15;0.70;52.15;0.90;52.27;0.70;52.38;0.70;52.38;0.70;52.62;0.70;52.62;0.90;52.62;0.70;52.73;0.70;53.54;0.70;53.54;0.90;53.65;0.70;53.65;0.70;53.77;0.70;53.88;0.70;53.88;0.70;54.00;0.70;54.46;0.90;54.46;0.70;54.58;0.70;54.58;0.70;54.81;0.70;54.81;0.70;55.38;0.70;55.38;0.90;55.38;0.70;55.50;0.70;55.62;0.70;55.73;0.70;55.85;0.70;55.85;0.90;55.96;0.70;56.08;0.70;56.19;0.70;56.31;0.70;56.31;0.90;57.23;0.90;57.23;0.70;57.35;0.70;57.35;0.70;57.46;0.70;57.58;0.70;57.69;0.70;57.81;0.70;58.15;0.70;58.15;0.90;58.15;0.70;58.38;0.70;58.38;0.70;58.62;0.70;58.62;0.90;58.62;0.70;59.08;1.00;59.08;0.70;59.19;0.70;59.19;0.70;59.31;0.70;59.42;0.70;59.54;0.70;59.54;1.00;59.54;0.70;59.65;0.70;59.88;0.70;59.88;0.70;60.00;0.70;60.00;1.00;60.12;0.70;60.92;0.70;60.92;1.00;60.92;0.70;61.04;0.70;61.15;0.70;61.15;0.70;61.27;0.70;61.38;0.70;61.50;0.70;61.85;1.00;61.85;0.70;61.96;0.70;61.96;0.70;62.08;0.70;62.08;0.70;62.31;0.70;62.31;0.70;62.77;1.00;62.77;0.70;62.88;0.70;62.88;0.70;63.00;0.70;63.12;0.70;63.23;1.00;63.35;0.70;63.46;0.70;63.46;0.70;63.58;0.70;63.69;1.00;63.81;0.70;63.92;0.70;63.92;0.70;64.62;0.70;64.62;1.00;64.62;0.70;64.73;0.70;64.85;0.70;64.96;0.70;65.54;1.00;65.54;0.70;65.65;0.70;65.65;0.70;66.00;0.70;66.00;1.00;66.12;0.70;66.12;0.70;66.35;0.70;66.46;1.00;66.58;0.70;66.58;0.70;66.69;0.70;66.81;0.70;66.92;1.00;67.04;0.70;67.04;0.70;67.15;0.70;67.27;0.70;67.27;0.70;67.38;1.00;67.38;0.70;68.31;1.00;68.31;0.70;68.42;0.70;68.42;0.70;68.65;0.70;68.65;0.70;68.77;0.70;68.77;0.70;69.23;0.70;69.23;1.00;69.35;0.70;69.46;0.70;69.58;0.70;69.58;0.70;70.15;1.00;70.15;0.70;70.15;0.70;70.27;0.70;70.38;0.70;70.62;0.70;70.62;1.00;70.62;0.70;70.73;0.70;70.96;0.70;71.08;1.00;71.08;0.70;71.19;0.70;72.00;0.70;72.00;1.00;72.12;0.70;72.23;0.70;72.23;0.70;72.46;0.70;72.81;0.70;72.92;1.00;72.92;0.70;73.04;0.70;73.27;0.70;73.38;1.00;73.38;0.70;73.50;0.70;73.85;0.70;73.85;0.90;73.96;0.70;74.08;0.70;74.31;0.70;74.42;0.90;74.42;0.70;74.42;0.70;74.65;0.70;74.77;0.90;74.77;0.70;75.46;0.70;75.58;0.70;75.69;0.90;75.69;0.70;76.04;0.70;76.50;0.70;76.62;0.70;76.62;0.90;76.73;0.70;77.08;0.70;77.54;0.70;77.54;0.90;77.65;0.70;77.77;0.70;78.00;0.70;78.12;0.90;78.12;0.70;78.46;0.90;78.46;0.70;78.58;0.70;79.38;0.90;79.38;0.70;79.50;0.70;79.62;0.70;79.73;0.70;80.31;0.90;80.31;0.70;80.42;0.70;80.54;0.70;80.77;0.90;81.23;0.70;81.23;0.90;81.23;0.70;81.35;0.70;81.35;0.70;81.69;0.90;81.81;0.70;81.92;0.70;82.15;0.90;82.27;0.70;83.08;0.90;83.08;0.70;83.19;0.70;83.19;0.70;83.31;0.70;84.00;0.70;84.00;0.90;84.12;0.70;84.12;0.70;84.23;0.70;84.92;0.90;84.92;0.70;84.92;0.70;85.04;0.70;85.04;0.70;85.38;0.70;85.38;0.90;85.50;0.70;85.50;0.70;85.85;0.70;85.85;0.70;85.85;0.90;85.96;0.70;86.88;0.90;86.88;0.70;86.88;0.70;87.12;0.70;87.69;0.70;87.69;0.90;88.04;0.70;88.15;0.70;88.15;0.90;88.27;0.70;88.27;0.70;88.73;1.00";
-    case 10: return "0.42;1.00;0.53;0.90;0.96;0.90;1.39;0.90;1.81;0.90;2.24;0.90;3.96;0.90;4.39;0.90;4.81;0.90;5.24;0.90;5.67;0.90;5.99;0.90;6.10;0.90;6.31;0.90;6.53;0.90;7.39;0.90;7.92;0.90;8.24;0.90;8.67;0.90;9.10;0.90;10.81;0.90;11.24;0.90;11.67;0.90;12.10;0.90;12.53;0.90;12.85;0.90;12.96;0.90;13.17;0.90;13.39;0.90;14.14;1.00;14.24;0.80;14.24;0.90;14.67;0.90;14.67;0.80;15.10;0.80;15.10;0.90;15.53;0.80;15.53;0.90;15.96;0.80;15.96;0.90;16.39;0.80;16.81;0.80;17.24;0.80;17.67;0.90;17.67;0.80;18.10;0.90;18.10;0.80;18.53;0.90;18.53;0.80;18.96;0.90;18.96;0.80;19.39;0.90;19.39;0.80;19.71;0.90;19.81;0.80;19.81;0.90;20.03;0.90;20.24;0.90;20.24;0.80;20.67;0.80;21.10;0.80;21.21;0.90;21.53;0.90;21.53;0.80;21.96;0.90;21.96;0.80;22.39;0.90;22.39;0.80;22.81;0.90;22.81;0.80;23.24;0.80;23.67;0.80;24.10;0.80;24.53;0.90;24.53;0.80;24.96;0.90;24.96;0.80;25.39;0.90;25.39;0.80;25.81;0.90;25.81;0.80;26.24;0.90;26.24;0.80;26.56;0.90;26.67;0.90;26.67;0.80;26.89;0.90;27.10;0.90;27.10;0.80;27.53;0.80;27.85;1.00;27.96;0.90;28.06;0.80;28.92;0.80;29.56;0.70;29.67;0.80;29.99;0.70;30.42;0.70;30.64;0.80;30.85;0.70;31.28;0.70;31.60;0.70;32.03;0.70;32.56;0.70;32.99;0.70;33.31;0.70;33.42;0.70;33.64;0.70;33.85;0.70;33.96;0.70;34.06;0.70;34.28;0.70;34.39;0.70;34.49;0.70;34.71;0.70;34.71;1.00;34.71;0.70;34.81;0.90;34.92;0.80;34.92;0.70;35.03;0.70;35.03;0.80;35.03;0.70;35.35;0.80;35.46;0.80;35.46;0.70;35.56;0.70;35.56;1.00;35.56;0.80;35.67;0.70;35.67;0.90;35.78;0.70;35.78;0.80;35.89;1.00;35.99;0.90;35.99;0.80;36.21;1.00;36.31;0.90;36.31;0.80;36.31;0.70;36.42;0.70;36.53;0.70;36.53;0.90;36.53;0.80;36.64;0.70;36.74;0.70;36.85;0.70;37.17;0.80;37.28;0.90;37.49;0.70;37.60;0.70;37.71;0.70;37.71;0.80;37.81;0.70;37.81;0.90;37.92;0.80;38.03;0.80;38.14;0.70;38.14;1.00;38.14;0.70;38.24;0.80;38.24;0.70;38.24;0.90;38.35;0.70;38.56;0.80;38.89;0.70;38.99;0.80;38.99;0.70;39.10;0.80;39.10;0.90;39.31;0.70;39.42;0.80;39.53;0.90;39.64;0.80;39.74;0.90;39.96;0.80;39.96;0.90;40.06;0.70;40.17;0.70;40.28;0.70;40.39;0.70;40.49;0.70;40.49;0.70;40.60;0.80;40.60;0.70;40.60;0.90;40.71;0.70;40.81;0.70;41.03;0.70;41.14;0.70;41.24;0.70;41.24;0.80;41.35;0.70;41.35;0.90;41.56;1.00;41.67;0.70;41.67;0.80;41.78;0.90;41.89;0.70;41.99;0.80;42.10;0.90;42.21;0.70;42.31;0.80;42.42;0.70;42.53;0.90;42.53;0.70;42.53;0.80;42.96;0.80;43.28;0.70;43.39;0.90;43.49;0.70;43.60;0.80;43.81;0.80;44.03;0.80;44.24;0.90;44.24;0.80;44.46;0.70;44.46;0.80;44.56;0.70;44.67;0.80;44.67;0.90;44.99;0.70;44.99;1.00;45.10;0.90;45.10;0.80;45.21;0.70;45.42;0.80;45.42;0.90;45.74;0.90;45.74;0.80;45.74;0.70;45.85;0.80;45.85;0.90;45.96;0.70;45.96;0.80;46.06;0.90;46.28;0.80;46.28;0.90;46.49;0.80;46.60;0.90;46.71;0.70;46.81;0.80;46.81;0.70;46.92;0.70;47.03;0.70;47.03;0.90;47.03;0.80;47.14;0.70;47.24;0.70;47.24;0.70;47.35;0.70;47.46;0.70;47.46;0.70;47.56;0.80;47.56;0.70;47.67;0.70;47.67;0.90;47.78;0.70;47.89;0.70;47.89;0.70;48.10;0.70;48.10;0.70;48.42;0.70;48.53;0.80;48.53;0.90;48.96;0.80;48.96;0.90;49.17;0.70;49.81;0.80;50.24;0.80;50.35;0.90;50.67;0.90;50.67;0.80;50.99;1.00;51.10;0.90;51.10;0.80;51.53;0.80;51.53;0.90;51.85;0.80;51.96;0.90;52.17;0.80;52.39;0.80;52.49;0.80;52.81;0.90;52.81;0.80;53.24;0.90;53.24;0.80;53.67;0.80;53.67;0.90;53.78;0.80;53.99;0.80;54.10;0.90;54.10;0.80;54.53;0.90;54.53;0.80;54.85;0.80;54.96;0.90;55.39;0.80;55.39;0.90;55.49;0.80;55.71;0.80;55.81;0.80;55.81;0.90;56.24;0.90;56.24;0.80;56.67;0.80;56.67;0.90;57.10;0.90;57.10;0.80;57.31;0.80;57.53;0.90;57.53;0.80;57.74;0.80;57.96;0.90;57.96;0.80;58.39;0.80;58.39;0.90;58.81;0.80;58.81;0.90;58.92;0.80;59.03;0.80;59.14;0.80;59.24;0.90;59.67;0.80;59.67;0.90;60.10;0.80;60.10;0.90;60.53;0.80;60.53;0.90;60.64;0.80;60.96;0.90;61.17;0.80;61.39;0.90;61.39;0.80;61.81;0.90;61.81;0.80;62.24;0.80;62.24;0.90;62.35;0.80;62.67;0.90;63.10;0.80;63.10;0.90;63.53;0.90;63.53;0.80;63.96;0.90;64.39;0.90;64.71;1.00;64.81;0.90;64.81;0.80;65.14;0.90;65.35;0.80;65.46;0.90;65.67;0.80;65.89;0.90;66.10;0.80;66.53;0.90;66.53;0.80;66.85;0.90;66.96;0.80;67.17;0.90;67.39;0.90;67.39;0.80;67.81;0.90;67.81;0.80;68.24;0.90;68.24;0.80;68.67;0.90;68.67;0.80;68.89;0.90;69.10;0.80;69.53;0.90;69.53;0.80;69.96;0.80;69.96;0.90;70.28;0.90;70.39;0.80;70.60;0.90;70.81;0.80;70.81;0.90;71.24;0.90;71.24;0.80;71.67;0.90;71.67;0.80;72.10;0.80;72.10;0.90;72.42;0.90;72.53;0.80;72.96;0.90;72.96;0.80;73.39;0.90;73.39;0.80;73.71;0.90;73.81;0.80;74.03;0.90;74.24;0.80;74.24;0.90;74.67;0.80;74.67;0.90;75.10;0.90;75.10;0.80;75.53;0.90;75.53;0.80;75.74;0.90;75.96;0.80;76.28;0.90;76.39;0.80;76.81;0.90;76.92;0.80;77.24;0.80;77.67;0.90;77.67;0.80;78.10;0.80;78.42;1.00;78.53;0.80;78.53;0.90;78.96;0.80;79.17;0.90;79.39;0.90;79.39;0.80;79.60;0.90;79.81;0.90;79.81;0.80;80.03;0.90;80.14;0.90;80.24;0.80;80.46;0.90;80.67;0.90;80.67;0.80;80.78;0.90;81.10;0.90;81.10;0.80;81.31;0.90;81.53;0.90;81.53;0.80;81.64;0.90;81.96;0.90;81.96;0.80;82.39;0.80;82.60;0.90;82.81;0.90;82.81;0.80;83.03;0.90;83.24;0.90;83.35;0.80;83.46;0.90;83.56;0.90;83.67;0.80;83.89;0.90;83.99;0.90;84.10;0.80;84.21;0.90;84.42;0.90;84.53;0.80;84.74;0.90;84.96;0.80;84.96;0.90;85.39;0.90;85.39;0.80;85.81;0.80;86.03;0.90;86.24;0.90;86.24;0.80;86.46;0.90;86.67;0.90;86.78;0.80;86.89;0.90;86.99;0.90;87.10;0.80;87.31;0.90;87.53;0.90;87.53;0.80;87.85;0.90;88.06;0.80;88.17;0.90;88.39;0.90;88.49;0.80;88.81;0.90;89.46;0.90;89.67;0.90;89.89;0.90;90.10;0.90;90.31;0.90;90.42;0.90;90.74;0.90;90.85;0.90;91.28;0.90;91.60;0.90;91.71;0.90;91.92;0.90;92.14;1.00;92.24;0.90;92.56;0.90;92.67;0.90;92.89;0.90;93.10;0.90;93.31;0.90;93.53;0.90;93.85;0.90;93.96;0.90;94.28;0.90;94.39;0.90;94.60;0.90;94.81;0.90;95.03;0.90;95.24;0.90;95.46;0.90;95.67;0.90";
-    case 11: return "0.43;0.90;0.78;0.90;0.93;0.90;1.21;0.90;1.55;0.90;1.71;0.90;1.85;0.90;2.31;0.90;2.61;0.90;2.80;0.90;3.06;0.90;3.36;0.90;3.53;0.90;3.68;0.90;4.15;0.90;4.46;0.90;4.61;0.90;4.91;0.90;5.18;0.90;5.38;0.90;5.51;0.90;5.94;0.90;6.24;0.90;6.41;0.90;6.74;0.90;7.01;0.90;7.34;0.90;7.36;1.00;7.79;0.90;8.13;0.90;8.28;0.90;8.59;0.90;8.86;0.90;9.01;0.90;9.19;0.90;9.66;0.90;9.96;0.90;10.13;0.90;10.41;0.90;10.69;0.90;10.86;0.90;11.00;0.90;11.49;0.90;11.78;0.90;11.94;0.90;12.19;0.90;12.56;0.90;12.71;0.90;12.86;0.90;13.33;0.90;13.63;0.90;13.78;0.90;14.13;0.90;14.39;0.90;14.71;0.90;14.77;1.00;15.19;1.00;15.51;1.00;15.66;1.00;15.96;1.00;16.27;1.00;16.46;1.00;16.59;1.00;17.04;1.00;17.35;1.00;17.51;1.00;17.81;1.00;18.14;1.00;18.27;1.00;18.44;1.00;18.91;1.00;19.21;1.00;19.37;1.00;19.53;0.70;19.67;1.00;19.99;1.00;20.00;0.70;20.12;1.00;20.25;0.70;20.27;1.00;20.40;0.70;20.56;0.70;20.71;0.70;20.74;1.00;20.86;0.70;21.02;0.70;21.12;1.00;21.15;0.70;21.29;1.00;21.31;0.70;21.48;0.70;21.56;1.00;21.58;0.70;21.70;0.70;21.76;0.70;21.82;1.00;21.83;0.70;21.88;0.70;21.91;0.70;22.06;0.70;22.09;1.00;22.23;0.90;22.56;0.90;22.75;0.80;22.87;0.80;23.04;0.90;23.48;0.90;23.67;0.80;23.78;0.80;23.93;0.90;24.13;0.80;24.27;0.80;24.39;0.90;24.86;0.90;25.05;0.80;25.15;0.80;25.33;0.90;25.81;0.90;25.81;0.70;25.90;0.70;25.97;0.80;26.03;0.70;26.08;0.80;26.26;0.90;26.71;0.70;26.74;0.90;26.83;0.70;26.88;0.80;27.02;0.80;27.21;0.90;27.66;0.90;27.85;0.80;27.98;0.80;28.13;0.90;28.56;0.90;28.57;1.00;28.99;1.00;29.03;0.90;29.51;0.90;29.67;0.80;29.80;0.80;29.99;0.90;30.44;0.90;30.60;0.80;30.75;0.80;30.88;0.90;31.36;0.90;31.53;0.80;31.67;0.80;31.83;0.90;32.28;0.90;32.43;0.80;32.57;0.80;32.74;0.90;33.19;0.90;33.38;0.80;33.53;0.80;33.68;0.90;34.11;0.90;34.28;0.80;34.40;0.80;34.61;0.90;35.06;0.90;35.23;0.80;35.38;0.80;35.51;0.90;35.96;1.00;35.96;0.90;36.15;0.80;36.30;0.80;36.37;1.00;36.41;0.90;36.89;0.90;36.94;1.00;37.07;0.80;37.34;0.90;37.67;1.00;37.81;0.90;37.82;1.00;38.13;1.00;38.24;0.90;38.42;1.00;38.59;1.00;38.74;1.00;38.74;0.90;39.21;0.90;39.61;1.00;39.69;0.90;39.97;1.00;40.13;0.90;40.29;1.00;40.47;1.00;40.59;0.90;40.62;1.00;41.04;0.90;41.44;1.00;41.51;0.90;41.79;1.00;41.96;0.90;42.11;1.00;42.27;1.00;42.44;1.00;42.44;0.90;42.89;0.90;43.33;1.00;43.34;0.90;43.64;1.00;43.84;0.90;43.92;1.00;44.19;1.00;44.29;0.90;44.74;0.90;45.12;1.00;45.21;0.90;45.46;1.00;45.69;0.90;45.81;1.00;45.97;1.00;46.11;0.90;46.12;1.00;46.54;0.90;47.02;1.00;47.04;0.90;47.34;1.00;47.51;0.90;47.66;1.00;47.81;1.00;47.97;1.00;47.99;0.90;48.43;0.90;48.86;1.00;48.91;0.90;49.06;1.00;49.36;0.90;49.47;1.00;49.64;1.00;49.79;1.00;49.83;0.90;50.26;0.90;50.61;1.00;50.73;0.90;50.77;1.00;51.07;1.00;51.11;0.70;51.24;0.90;51.25;0.70;51.34;1.00;51.46;0.70;51.62;1.00;51.65;0.70;51.66;0.90;51.81;0.70;51.93;0.70;52.08;0.70;52.22;0.70;52.28;0.70;52.46;0.70;52.60;0.70;52.70;0.70;52.81;0.70;52.93;0.70;53.03;0.70;53.15;0.70;53.28;0.70;53.40;0.70;53.49;0.90;53.51;1.00;53.79;1.00;53.96;0.90;53.97;1.00;54.26;1.00;54.41;1.00;54.44;0.90;54.54;1.00;54.71;1.00;54.89;1.00;54.93;0.90;55.21;1.00;55.37;1.00;55.38;0.90;55.84;1.00;55.84;0.90;56.29;0.90;56.57;1.00;56.72;1.00;56.74;0.90;56.89;1.00;57.06;1.00;57.21;0.90;57.22;1.00;57.51;1.00;57.66;1.00;57.69;0.90;57.97;1.00;58.11;0.90;58.12;1.00;58.31;1.00;58.44;1.00;58.57;1.00;58.60;0.90;58.91;1.00;59.07;1.00;59.08;0.90;59.51;1.00;59.53;0.90;59.99;0.90;60.41;1.00;60.46;0.90;60.88;1.00;60.93;0.90;61.22;1.00;61.36;1.00;61.39;0.90;61.67;1.00;61.82;1.00;61.84;0.90;61.99;1.00;62.14;1.00;62.26;0.90;62.29;1.00;62.61;1.00;62.76;0.90;62.77;1.00;63.19;1.00;63.23;0.90;63.71;0.90;63.94;1.00;64.11;1.00;64.13;0.90;64.26;1.00;64.42;1.00;64.59;1.00;64.59;0.90;64.91;1.00;65.06;1.00;65.06;0.90;65.36;1.00;65.51;0.90;65.52;1.00;65.69;1.00;65.84;1.00;65.97;1.00;65.98;0.90;66.29;1.00;66.44;0.90;66.46;1.00;66.77;1.00;66.86;0.90;66.92;1.00;67.07;1.00;67.22;1.00;67.33;0.90;67.41;1.00;67.81;1.00;68.28;0.90;68.29;1.00;68.62;1.00;68.76;0.90;68.79;1.00;69.04;1.00;69.19;1.00;69.21;0.90;69.36;1.00;69.51;1.00;69.66;0.90;69.67;1.00;69.96;1.00;70.12;1.00;70.13;0.90;70.57;1.00;70.61;0.90;71.09;0.90;71.29;1.00;71.42;1.00;71.54;0.90;71.61;1.00;71.77;1.00;71.96;1.00;71.98;0.90;72.29;1.00;72.44;1.00;72.44;0.90;72.76;1.00;72.91;1.00;72.91;0.90;73.06;1.00;73.21;1.00;73.36;1.00;73.36;0.90;73.71;1.00;73.83;0.90;73.84;1.00;74.26;1.00;74.29;0.90;74.74;0.90;75.21;1.00;75.21;0.70;75.23;0.90;75.31;0.70;75.62;0.70;75.65;1.00;75.66;0.90;76.01;1.00;76.13;0.90;76.14;1.00;76.46;1.00;76.59;0.90;76.60;1.00;76.77;1.00;76.92;1.00;77.06;0.90;77.07;1.00;77.36;1.00;77.51;1.00;77.53;0.90;77.94;1.00;77.99;0.90;78.44;0.90;78.71;1.00;78.87;1.00;78.91;0.90;79.04;1.00;79.21;1.00;79.36;1.00;79.38;0.90;79.71;1.00;79.81;0.90;79.84;1.00;80.12;1.00;80.27;1.00;80.29;0.90;80.44;1.00;80.57;1.00;80.63;0.70;80.74;1.00;80.74;0.90;80.80;0.70;80.95;0.70;81.06;1.00;81.08;0.70;81.22;1.00;81.23;0.70;81.36;0.70;81.48;0.70;81.52;1.00;81.60;0.70;81.66;1.00;81.73;0.70;81.82;1.00;81.83;0.70;81.95;0.70;81.97;1.00;82.06;0.70;82.13;0.90;82.16;0.70;82.28;0.70;82.29;1.00;82.40;0.70;82.48;0.70;82.56;1.00;82.58;0.90;82.63;0.70;82.64;1.00;82.75;0.70;82.81;0.70;83.04;1.00;83.04;0.90;84.24;0.90;84.41;0.90;84.74;0.90;84.93;0.90;85.38;0.90;85.81;0.90;86.29;0.90;86.74;0.90;87.94;0.90;88.11;0.90;88.28;0.90;88.46;0.90;88.66;0.90;89.08;0.90;89.51;0.90;90.01;0.90;90.44;0.90;91.64;0.90;91.81;0.90;92.14;0.90;92.29;0.90;92.74;0.90;93.19;0.90;93.66;0.90;93.81;0.90;93.98;0.90;94.16;0.90;95.03;0.90";
-    case 12: return "0.65;0.90;0.99;0.90;1.18;0.90;1.56;0.90;1.71;0.90;2.08;0.90;2.38;0.90;2.74;0.90;3.13;0.90;3.44;0.90;3.83;0.90;3.98;0.90;4.38;0.90;4.53;0.90;4.88;0.90;5.23;0.90;5.59;0.90;5.93;0.90;6.31;0.90;6.66;0.90;6.78;0.90;7.18;0.90;7.33;0.90;7.69;0.90;8.01;0.90;8.38;0.90;8.71;0.90;9.06;0.90;9.43;0.90;9.58;0.90;9.99;0.90;10.13;0.90;10.48;0.90;10.83;0.90;11.16;0.90;11.26;1.00;11.74;0.90;11.94;0.90;12.08;0.90;12.24;0.90;12.41;0.90;12.96;0.90;13.33;0.90;13.68;0.90;14.01;0.90;14.61;0.90;14.74;0.90;14.89;0.90;15.06;0.90;15.21;0.90;15.76;0.90;15.91;0.90;16.11;0.90;16.27;0.90;16.39;0.90;16.73;0.90;16.87;0.90;17.44;0.90;17.57;0.90;17.76;0.90;17.92;0.90;18.09;0.90;18.52;0.90;18.71;0.90;18.89;0.90;19.07;0.90;19.21;0.90;19.39;0.90;19.69;0.90;20.14;0.90;20.33;0.90;20.49;0.90;20.67;0.90;20.89;0.90;21.37;0.90;21.51;0.90;21.71;0.90;21.86;0.90;22.19;0.90;22.47;0.90;22.51;1.00;22.86;0.90;23.02;0.90;23.19;0.90;23.36;0.90;23.51;0.90;23.67;0.90;24.07;0.90;24.23;0.90;24.41;0.90;24.57;0.90;25.22;0.90;25.27;0.90;25.39;0.90;25.57;0.90;25.61;0.90;25.71;0.90;25.91;0.90;26.02;0.90;26.07;0.90;26.26;0.90;26.27;0.90;26.41;0.90;26.59;0.90;26.67;0.90;26.74;0.90;26.79;0.90;26.92;0.90;27.01;0.90;27.09;0.90;27.29;0.90;27.36;0.90;27.47;0.90;27.67;0.90;27.71;0.90;27.83;0.90;28.02;0.90;28.19;0.90;28.54;0.90;28.71;0.90;28.87;0.90;29.04;0.90;29.24;0.90;29.41;0.90;29.46;1.00;29.94;0.90;30.12;0.90;30.32;0.90;30.51;0.90;30.61;0.90;30.81;1.00;30.81;0.90;31.32;0.90;31.51;0.90;31.69;0.90;31.84;0.90;32.02;0.90;32.22;0.90;32.26;1.00;32.59;0.90;32.76;0.90;32.92;0.90;33.11;0.90;33.31;0.90;33.49;0.90;33.82;0.90;34.16;0.90;34.34;0.90;34.54;0.90;34.71;0.90;34.84;0.90;35.02;1.00;35.02;0.90;35.56;0.90;35.72;0.90;35.96;0.90;36.14;0.90;36.29;0.90;36.46;1.00;36.97;0.90;37.16;0.90;37.32;0.90;37.51;0.90;37.71;0.90;37.87;0.90;37.89;1.00;38.19;0.90;38.36;0.90;38.54;0.90;38.72;0.90;38.92;0.90;39.09;0.90;39.46;0.90;39.49;1.00;39.84;1.00;40.04;1.00;40.21;1.00;40.41;1.00;40.54;0.80;40.56;1.00;40.74;1.00;41.25;0.80;41.28;1.00;41.46;1.00;41.59;0.80;41.64;1.00;41.81;1.00;41.95;0.80;41.98;1.00;42.14;1.00;42.32;0.80;42.62;1.00;42.64;0.80;42.84;1.00;43.01;1.00;43.01;0.80;43.19;1.00;43.32;0.80;43.37;1.00;43.54;1.00;43.69;0.80;43.87;1.00;44.02;0.80;44.07;1.00;44.24;1.00;44.40;0.80;44.43;1.00;44.59;1.00;44.74;1.00;44.75;0.80;45.11;1.00;45.14;0.80;45.45;0.80;45.49;1.00;45.67;1.00;45.82;1.00;45.82;0.80;46.02;1.00;46.16;0.80;46.17;1.00;46.36;1.00;46.52;0.80;46.84;0.80;46.86;1.00;47.06;1.00;47.21;1.00;47.24;0.80;47.39;1.00;47.54;1.00;47.57;0.80;47.74;1.00;47.92;0.80;48.24;1.00;48.27;0.80;48.44;1.00;48.59;1.00;48.64;0.80;48.77;1.00;48.97;1.00;49.00;0.80;49.14;1.00;49.32;0.80;49.46;1.00;49.65;0.80;49.66;1.00;49.82;1.00;49.97;1.00;50.06;0.80;50.14;1.00;50.31;1.00;50.39;0.80;50.47;1.00;50.75;0.80;50.77;1.00;51.09;0.80;51.12;1.00;51.32;1.00;51.45;0.80;51.49;1.00;51.66;1.00;51.81;1.00;51.82;0.80;51.99;1.00;52.16;0.80;52.49;1.00;52.52;0.80;52.67;1.00;52.84;1.00;52.86;0.80;53.02;1.00;53.21;1.00;53.24;0.80;53.39;1.00;53.59;0.80;53.89;1.00;53.92;0.80;54.06;1.00;54.24;1.00;54.27;0.80;54.41;1.00;54.57;1.00;54.67;0.80;54.77;1.00;55.00;0.80;55.12;1.00;55.31;1.00;55.34;0.80;55.51;1.00;55.66;1.00;55.72;0.80;55.81;1.00;55.99;1.00;56.06;0.80;56.39;1.00;56.41;0.80;56.72;1.00;56.77;0.80;56.94;1.00;57.07;1.00;57.14;0.80;57.26;1.00;57.42;1.00;57.51;0.80;57.61;1.00;57.84;0.80;58.12;1.00;58.19;0.80;58.31;1.00;58.47;1.00;58.54;0.80;58.64;1.00;58.82;1.00;58.89;0.80;58.99;1.00;59.24;0.80;59.52;1.00;59.62;0.80;59.72;1.00;59.90;1.00;59.94;0.80;60.07;1.00;60.24;1.00;60.30;0.80;60.44;1.00;60.62;0.80;60.76;1.00;60.94;1.00;60.99;0.80;61.11;1.00;61.31;1.00;61.35;0.80;61.44;1.00;61.62;1.00;61.69;0.80;62.04;1.00;62.08;0.90;62.09;0.80;62.41;0.90;62.45;0.80;62.47;1.00;62.74;1.00;62.78;0.90;62.82;0.80;63.11;0.90;63.12;1.00;63.14;0.80;63.54;1.00;63.82;1.00;64.19;1.00;64.69;1.00;64.89;0.90;64.92;1.00;65.24;1.00;65.24;0.90;65.61;1.00;65.64;0.90;65.96;1.00;65.96;0.90;66.13;0.90;66.31;1.00;66.53;0.90;66.62;1.00;66.68;0.90;66.99;1.00;67.01;0.90;67.35;0.90;67.37;1.00;67.72;1.00;67.76;0.90;68.06;0.90;68.07;1.00;68.41;0.90;68.44;1.00;68.74;0.90;68.79;1.00;69.12;1.00;69.44;1.00;69.81;1.00;70.16;1.00;70.52;1.00;70.54;0.90;70.86;1.00;70.86;0.90;71.22;1.00;71.25;0.90;71.57;1.00;71.60;0.90;71.76;0.90;71.92;1.00;72.11;0.90;72.27;1.00;72.29;0.90;72.64;0.90;72.64;0.80;72.66;1.00;72.87;0.80;72.99;1.00;73.01;0.90;73.02;0.80;73.36;0.80;73.37;1.00;73.54;0.80;73.71;1.00;73.72;0.80;73.89;0.80;74.06;1.00;74.07;0.80;74.24;0.80;74.40;0.80;74.41;1.00;74.59;0.80;74.76;1.00;75.05;0.80;75.12;1.00;75.24;0.80;75.42;0.80;75.46;1.00;75.60;0.80;75.84;1.00;76.14;1.00;76.14;0.80;76.51;1.00;76.82;0.80;76.87;1.00;77.04;0.80;77.22;1.00;77.24;0.80;77.42;0.80;77.57;1.00;77.91;1.00;77.92;0.80;78.14;0.80;78.27;1.00;78.32;0.80;78.66;1.00;78.90;0.80;79.01;1.00;79.12;0.80;79.35;0.80;79.36;1.00;79.69;1.00;79.70;0.80;79.85;0.80;80.07;1.00;80.15;0.80;80.42;1.00;80.65;0.80;80.77;1.00;80.84;0.80;81.02;0.80;81.12;1.00;81.19;0.80;81.35;0.80;81.49;1.00;81.52;0.80;81.72;0.80;81.82;1.00;81.89;0.80;82.17;1.00;82.32;0.80;82.51;0.80;82.56;1.00;82.87;1.00;82.99;0.80;83.14;0.80;83.26;1.00;83.59;1.00;83.67;0.80;83.82;0.80;83.94;1.00;83.99;0.80;84.15;0.80;84.29;1.00;84.64;0.80;84.67;1.00;84.68;0.90;85.18;0.90;85.69;0.80;86.05;0.80;86.08;0.90;86.39;0.80;86.59;0.90;86.74;0.80;87.11;0.80;87.44;0.80;87.46;0.90;87.80;0.80;87.99;0.90;88.14;0.80;88.49;0.80;88.84;0.80;88.88;0.90;89.19;0.80;89.59;0.90;89.93;0.90;90.29;0.90;90.84;0.90;91.71;0.90;92.23;0.90;93.09;0.90;93.64;0.90;94.53;0.90";
-    case 13: return "0.23;0.80;0.43;0.80;0.63;0.80;0.82;0.80;0.98;0.80;1.17;0.80;1.37;0.80;1.60;0.80;1.77;0.80;1.88;0.80;2.02;0.80;2.20;0.80;2.40;0.80;2.67;0.80;2.83;0.80;3.02;0.80;3.23;0.80;3.48;0.80;3.63;0.80;3.80;0.80;3.92;0.80;4.13;0.80;4.35;0.80;4.58;0.80;4.70;0.80;4.90;0.80;5.10;0.80;5.37;0.80;5.48;0.80;5.63;0.80;5.77;0.80;5.95;0.80;6.20;0.80;6.42;0.80;6.55;0.80;6.75;0.80;7.00;0.80;7.23;0.80;7.37;0.80;7.50;0.80;7.65;0.80;7.88;0.80;8.07;0.80;8.33;0.80;8.45;0.80;8.68;0.80;8.93;0.80;9.12;0.80;9.27;0.80;9.42;0.80;9.53;0.80;9.75;0.80;9.97;0.80;10.22;0.80;10.33;0.80;10.55;0.80;10.80;0.80;11.02;0.80;11.15;0.80;11.32;0.80;11.43;0.80;11.67;0.80;11.87;0.80;12.10;0.80;12.23;0.80;12.43;0.80;12.68;0.80;12.88;0.80;13.05;0.80;13.22;0.80;13.43;0.80;13.63;0.80;13.82;0.80;13.98;0.80;15.15;0.80;15.36;0.80;15.56;0.80;15.89;0.80;16.49;0.80;16.73;0.80;17.06;0.80;17.83;0.80;18.36;0.80;18.88;0.80;20.62;0.70;20.77;0.70;20.93;0.70;21.07;0.70;21.18;0.70;21.33;0.70;21.48;0.70;21.60;0.70;21.65;0.80;21.75;0.70;21.80;0.80;21.92;0.70;21.93;0.80;22.25;0.80;22.43;0.80;22.46;0.90;22.73;0.90;22.93;0.90;23.21;0.90;23.34;0.90;23.53;0.90;23.79;0.90;23.99;0.90;24.14;0.90;24.29;0.90;24.39;0.90;24.59;0.90;24.83;0.90;25.08;0.90;25.21;0.90;25.44;0.90;25.66;0.90;25.93;0.90;26.04;0.90;26.19;0.90;26.46;0.90;26.69;0.90;26.93;0.90;27.08;0.90;27.33;0.90;27.54;0.90;27.73;0.90;27.88;0.90;28.01;0.90;28.16;0.90;28.34;0.90;28.60;0.90;28.81;0.90;28.94;0.90;29.14;0.90;29.39;0.90;29.51;0.90;29.66;0.90;29.81;0.90;29.94;0.90;30.09;0.90;30.28;0.90;30.48;0.90;30.69;0.90;30.84;0.90;31.08;0.90;31.28;0.90;31.49;0.90;31.63;0.90;31.78;0.90;31.88;0.90;32.11;0.90;32.33;0.90;32.56;0.90;32.69;0.90;32.93;0.90;33.15;0.90;33.36;0.90;33.48;0.90;33.63;0.90;33.76;0.90;34.01;0.90;34.23;0.90;34.48;0.90;34.59;0.90;34.78;0.90;35.03;0.90;35.24;0.90;35.38;0.90;35.51;0.90;35.68;0.90;35.86;0.90;36.09;0.90;36.29;0.90;36.46;0.90;36.64;0.90;36.89;0.90;37.03;0.90;37.14;0.90;37.29;0.90;37.52;1.00;37.73;1.00;37.95;1.00;38.18;1.00;38.31;1.00;38.50;1.00;38.78;1.00;39.10;1.00;39.25;1.00;39.38;1.00;39.81;1.00;40.18;1.00;40.36;1.00;40.63;1.00;40.95;1.00;41.10;1.00;41.23;1.00;41.48;1.00;41.70;1.00;41.95;1.00;42.08;1.00;42.28;1.00;42.56;1.00;42.80;1.00;42.95;1.00;43.08;1.00;44.48;1.00;44.66;1.00;44.78;1.00;44.95;1.00;45.18;1.00;45.41;1.00;45.65;1.00;45.80;1.00;46.01;1.00;46.23;1.00;46.55;1.00;46.68;1.00;46.83;1.00;47.30;1.00;47.65;1.00;47.86;1.00;48.13;1.00;48.41;1.00;48.58;1.00;48.71;1.00;48.97;1.00;49.16;1.00;49.43;1.00;49.56;1.00;49.76;1.00;50.03;1.00;50.30;1.00;50.43;1.00;50.61;0.90;50.84;0.90;51.06;0.90;51.33;0.90;51.46;0.90;51.64;0.90;51.88;0.90;52.03;0.90;52.13;0.90;52.28;0.90;52.39;0.90;52.73;0.70;52.92;0.70;53.33;0.70;53.48;0.70;53.73;0.70;53.93;0.70;54.08;0.70;54.28;0.70;54.43;0.70;54.57;0.70;54.72;0.70;54.87;0.70;55.28;0.70;55.47;0.70;55.63;0.70;55.78;0.70;55.93;0.70;56.22;0.70;56.35;1.00;56.78;1.00;57.03;1.00;57.17;1.00;57.40;1.00;57.60;1.00;57.85;1.00;58.00;1.00;58.12;1.00;58.22;1.00;58.63;1.00;58.93;1.00;59.07;1.00;59.27;1.00;59.52;1.00;59.73;1.00;59.87;1.00;60.07;1.00;60.55;1.00;60.77;1.00;60.95;1.00;61.17;1.00;61.32;1.00;61.45;1.00;61.67;1.00;61.93;1.00;62.67;1.00;62.80;1.00;63.02;1.00;63.23;1.00;63.60;1.00;63.73;1.00;63.88;1.00;64.08;1.00;64.32;1.00;64.55;1.00;64.70;1.00;64.90;1.00;65.15;1.00;65.47;1.00;65.59;1.00;66.00;1.00;66.20;1.00;66.40;1.00;66.53;1.00;66.78;1.00;66.98;1.00;67.25;1.00;67.38;1.00;67.52;1.00;67.63;1.00;68.05;1.00;68.25;1.00;68.38;1.00;68.65;1.00;68.77;1.00;68.92;1.00;69.18;1.00;69.43;1.00;69.60;1.00;69.80;1.00;69.98;1.00;70.13;1.00;70.30;1.00;70.52;1.00;70.70;1.00;70.80;1.00;71.13;1.00;71.30;1.00;71.42;1.00;71.60;1.00;71.82;1.00;72.03;1.00;72.20;1.00;72.38;1.00;72.60;1.00;72.85;1.00;72.97;1.00;73.12;1.00;73.25;1.00;73.48;1.00;73.67;1.00;73.90;1.00;74.03;1.00;74.25;1.00;74.50;1.00;74.72;1.00;74.83;1.00;75.02;1.00;75.30;1.00;75.57;1.00;75.77;1.00;75.92;1.00;76.13;1.00;76.28;1.00;76.42;1.00;76.58;1.00;76.73;1.00;76.92;1.00;77.63;1.00;77.78;1.00;78.02;1.00;78.23;1.00;78.60;1.00;78.75;1.00;78.88;1.00;79.08;1.00;79.30;1.00;79.55;1.00;79.68;1.00;79.92;1.00;80.12;1.00;80.45;1.00;80.58;1.00;80.95;1.00;81.15;1.00;81.37;1.00;81.50;1.00;81.63;1.00;81.75;1.00;82.00;1.00;82.23;1.00;82.38;1.00;82.52;1.00;82.78;1.00;83.00;1.00;83.25;1.00;83.38;1.00;83.60;1.00;83.78;1.00;83.90;1.00;84.10;1.00;84.38;1.00;84.53;1.00;84.72;1.00;84.90;1.00;85.10;1.00;85.27;1.00;85.48;1.00;85.75;1.00;86.08;1.00;86.20;1.00";
-    case 14: return "0.25;0.90;0.43;0.90;0.88;0.90;1.00;0.90;1.13;0.90;1.38;0.90;2.05;0.90;2.34;0.90;2.72;0.90;2.85;0.90;2.95;0.90;3.50;0.90;3.68;0.90;3.82;0.90;3.98;0.90;4.18;0.90;4.60;0.90;4.72;0.90;4.87;0.90;5.15;0.90;5.90;0.80;6.15;0.80;6.26;0.80;6.38;0.80;6.50;0.80;6.58;0.80;6.68;0.80;6.81;0.80;7.10;0.80;7.60;1.00;7.70;0.90;7.92;0.90;8.48;0.90;8.78;0.90;8.88;0.90;9.00;0.90;9.10;0.90;9.18;0.90;9.57;0.90;9.78;0.90;10.32;0.90;10.42;0.90;10.52;0.90;11.48;0.90;11.51;1.00;11.68;0.90;12.45;0.90;12.58;0.90;12.70;0.90;12.82;0.90;12.90;0.90;13.58;0.90;14.15;0.90;14.27;0.90;15.23;0.90;15.38;0.90;15.57;0.90;15.68;0.90;15.82;0.90;15.92;0.90;16.20;0.90;16.67;0.90;17.13;0.90;17.23;0.90;17.37;0.90;17.48;0.90;17.60;0.90;17.70;0.90;17.85;0.90;18.15;0.90;18.58;0.90;18.93;1.00;19.05;0.90;19.23;0.90;19.80;0.90;20.13;0.90;20.27;0.90;20.37;0.90;20.47;0.90;20.77;0.90;21.10;0.80;21.28;0.80;21.45;0.80;21.51;0.80;21.63;0.80;21.75;0.80;21.86;0.80;22.01;0.80;22.25;0.80;22.70;1.00;22.76;0.70;22.78;0.70;22.83;0.90;22.88;0.70;23.00;0.70;23.10;0.90;23.57;0.90;23.70;0.90;23.83;0.90;24.07;0.90;24.30;0.90;24.50;0.90;24.70;0.90;24.95;0.90;25.53;0.70;25.63;0.90;25.66;0.70;25.71;0.70;25.83;0.70;25.95;0.70;26.00;0.70;26.65;0.90;26.88;0.90;27.10;0.90;27.37;0.90;27.60;0.90;27.85;0.90;28.03;0.90;28.30;0.90;28.50;0.90;28.75;0.90;29.25;0.70;29.31;0.70;29.40;0.70;29.43;0.90;29.51;0.70;29.61;0.70;29.71;0.70;29.76;0.70;29.93;0.70;30.00;0.70;30.38;0.90;30.62;0.90;31.04;0.90;31.15;0.90;31.28;0.90;31.53;0.90;31.80;0.90;32.02;0.90;32.28;0.90;32.48;0.90;33.03;0.70;33.11;0.70;33.20;0.90;33.21;0.70;33.30;0.70;33.40;0.70;33.51;0.70;34.15;0.90;34.35;0.90;34.88;0.90;35.05;0.90;35.13;0.90;35.37;0.90;35.57;0.90;35.85;0.90;36.05;0.90;36.30;0.90;36.53;0.90;36.78;0.90;37.05;0.90;37.27;0.90;37.48;0.90;37.72;0.90;37.83;1.00;37.95;0.90;38.67;0.90;38.77;1.00;38.82;0.90;38.93;0.90;39.15;0.90;39.25;1.00;39.42;0.90;39.60;0.90;39.73;1.00;39.82;0.90;40.03;0.90;40.58;0.90;40.65;1.00;40.70;0.90;40.87;0.90;41.05;0.90;41.08;1.00;41.28;0.90;41.50;0.90;41.60;1.00;41.73;0.90;41.97;0.90;42.43;0.90;42.52;1.00;42.60;0.90;42.72;0.90;42.93;0.90;43.03;1.00;43.17;0.90;43.38;0.90;43.48;1.00;43.63;0.90;43.82;0.90;44.40;0.90;44.45;1.00;44.53;0.90;44.82;0.90;44.93;1.00;45.27;0.90;45.38;1.00;45.50;0.90;45.78;0.90;45.98;0.90;46.32;1.00;46.67;0.90;46.83;1.00;46.92;0.90;47.17;0.90;47.28;1.00;47.37;0.90;47.65;0.90;47.87;0.90;48.13;0.90;48.20;1.00;48.33;0.90;48.57;0.90;48.72;1.00;48.82;0.90;49.07;0.90;49.12;1.00;49.28;0.90;49.52;0.90;49.75;0.90;50.08;1.00;50.43;0.90;50.60;1.00;50.68;0.90;50.92;0.90;51.03;1.00;51.17;0.90;51.42;0.90;51.65;0.90;52.00;1.00;52.35;0.90;52.47;1.00;52.58;0.90;53.03;0.90;53.30;0.90;53.80;0.90;54.05;0.90;54.27;0.90;54.52;0.90;54.95;0.90;55.22;0.90;55.70;0.90;55.78;0.90;55.92;0.90;56.03;0.90;56.15;0.90;56.20;0.70;56.25;0.90;56.26;0.70;56.36;0.70;56.40;0.90;56.48;0.70;56.87;0.90;57.10;0.90;57.62;0.90;57.82;0.90;58.07;0.90;58.25;0.90;58.75;0.90;58.97;0.90;59.43;0.90;59.52;0.90;59.65;0.90;59.78;0.90;59.92;0.90;59.98;0.70;60.01;0.70;60.05;0.90;60.13;0.70;60.18;0.90;60.65;0.90;60.77;0.90;60.92;0.90;61.02;0.90;61.15;0.90;61.23;0.90;61.37;0.90;61.52;0.90;61.98;0.90;62.48;0.90;62.60;0.90;62.75;0.90;62.83;0.90;63.02;0.90;63.13;0.90;63.28;0.90;63.42;0.90;63.90;0.90;64.42;0.90;64.62;0.90;65.10;0.90;65.20;0.90;65.62;0.90;65.65;0.70;65.73;0.70;65.81;0.70;65.85;0.90;66.28;0.90;66.50;0.90;67.10;0.90;67.38;0.90;67.50;0.90;67.63;0.90;67.75;0.90;67.85;0.90;68.07;1.00;68.17;0.90;68.43;0.90;68.82;0.90;68.95;0.90;69.00;1.00;69.07;0.90;69.37;0.90;69.50;1.00;69.65;0.90;69.88;0.90;69.93;1.00;70.10;0.90;70.33;0.90;70.80;0.90;70.88;1.00;70.93;0.90;71.07;0.90;71.28;0.90;71.38;1.00;71.48;0.90;71.72;0.90;71.83;1.00;71.98;0.90;72.22;0.90;72.70;0.90;72.77;0.90;72.78;1.00;72.88;0.90;73.15;0.90;73.26;1.00;73.35;0.90;73.58;0.90;73.73;1.00;73.88;0.90;74.05;0.90;74.55;0.90;74.63;1.00;74.65;0.90;74.77;0.90;75.02;0.90;75.15;1.00;75.53;0.90;75.65;1.00;75.73;0.90;75.97;0.90;76.45;0.90;76.58;0.90;76.73;0.90;76.97;0.90;77.15;0.90;77.40;0.90;77.63;0.90;77.75;0.90;77.90;0.90;77.97;0.90;78.13;0.90;78.22;0.90;78.33;0.90;78.45;0.90;78.57;0.90;79.05;0.90;79.55;0.90;79.73;0.90;80.22;0.90;80.32;0.90;80.45;0.90;80.73;0.90;80.92;0.90;81.18;0.90";
-    case 15: return "0.20;0.80;0.50;0.80;1.05;0.80;1.23;0.80;1.58;0.80;1.98;0.80;2.55;0.80;2.72;0.80;3.03;0.80;3.42;0.80;4.02;0.80;4.15;0.80;4.50;0.80;4.90;0.80;5.48;0.80;5.63;0.80;5.98;0.80;6.37;0.80;6.90;0.80;7.05;0.80;7.43;0.80;7.82;0.80;8.38;0.80;8.52;0.80;8.90;0.80;9.27;0.80;9.83;0.80;9.98;0.80;10.39;0.80;10.77;0.80;11.30;0.90;11.38;0.80;11.45;0.90;11.53;0.80;11.61;0.90;11.80;0.90;12.18;0.90;12.56;0.90;12.71;0.90;13.03;0.90;13.07;0.70;13.12;0.70;13.24;0.70;13.37;0.70;13.42;0.70;13.46;0.70;13.56;0.70;13.67;0.70;13.98;0.90;14.71;0.90;15.06;0.90;15.46;0.90;15.65;0.90;16.03;0.90;16.41;0.90;16.60;0.90;16.76;0.90;17.15;0.90;17.33;0.90;17.71;0.90;18.05;0.90;18.45;0.90;18.60;0.90;18.94;0.90;19.86;0.90;19.92;0.70;19.99;0.70;20.06;0.70;20.12;0.70;20.22;0.70;20.29;0.70;20.39;0.70;20.41;0.70;20.63;0.90;20.98;0.90;21.40;0.90;21.55;0.90;21.91;0.90;22.28;0.90;22.46;0.90;22.65;0.90;23.05;0.90;23.21;0.90;23.58;0.90;23.75;0.90;23.93;0.90;24.13;0.90;24.48;0.90;24.86;0.90;24.94;0.70;24.99;0.70;25.06;0.70;25.16;0.70;25.26;0.70;25.41;0.70;25.73;0.90;25.74;0.70;25.87;0.70;25.95;0.70;26.04;0.70;26.12;0.70;26.21;0.70;26.46;0.90;26.85;0.90;27.25;0.90;27.43;0.90;27.78;0.90;28.20;0.90;28.36;0.90;28.56;0.90;28.73;0.90;28.93;0.90;29.10;0.90;29.28;0.90;29.45;1.00;29.45;0.90;29.86;0.90;30.23;0.90;30.40;0.90;30.74;0.70;30.75;0.90;30.85;0.70;30.92;0.70;31.00;0.70;31.07;0.70;31.16;0.70;31.27;0.70;31.36;0.70;31.47;0.70;31.52;0.70;31.61;0.70;31.69;0.70;31.79;0.70;31.82;0.70;31.96;0.90;32.40;0.90;32.56;0.90;32.74;0.90;33.11;0.90;33.53;0.90;33.71;0.90;34.08;0.90;34.26;0.90;34.63;0.90;35.00;0.90;35.36;0.90;35.75;0.90;36.11;0.90;36.30;0.90;36.64;0.90;36.64;0.70;36.71;0.70;36.77;0.70;36.89;0.70;36.92;0.70;37.12;0.70;37.19;0.70;37.32;0.70;37.36;0.70;37.44;0.70;37.47;0.70;37.90;0.90;38.28;0.90;38.45;0.90;38.60;0.90;39.03;0.90;39.38;0.90;39.55;0.90;39.96;0.90;40.13;0.90;40.54;0.90;40.90;0.90;41.22;1.00;41.25;0.90;41.60;0.90;41.96;0.90;42.15;0.90;42.53;0.90;42.54;0.70;42.62;0.70;42.77;0.70;42.84;0.70;43.04;0.70;43.07;0.70;43.16;0.70;43.21;0.70;43.35;0.70;43.80;0.90;44.20;0.90;44.36;0.90;44.55;0.90;44.95;0.90;45.31;0.90;45.50;0.90;45.85;0.90;46.00;0.90;46.40;0.90;46.73;0.90;47.13;0.90;47.50;0.90;47.91;0.90;48.05;0.90;48.41;0.90;48.51;0.70;48.61;0.70;48.69;0.70;48.77;0.70;48.92;0.70;49.01;0.70;49.07;0.70;49.18;0.70;49.70;0.90;50.08;0.90;50.23;0.90;50.41;0.90;50.83;0.90;51.20;0.90;51.38;0.90;51.76;0.90;51.91;0.90;52.30;0.90;52.68;0.90;52.98;1.00;53.03;0.90;53.20;0.90;53.38;0.90;53.56;0.90;53.76;0.90;53.93;0.90;54.13;0.90;54.31;0.90;54.66;0.90;54.86;0.90;55.06;0.90;55.43;0.90;55.61;0.90;55.96;0.90;55.97;0.70;56.04;0.70;56.14;0.70;56.19;0.70;56.30;0.70;56.42;0.70;56.50;0.70;56.57;0.70;56.68;0.90;56.86;0.90;57.05;0.90;57.23;0.90;57.44;0.90;57.63;0.90;57.81;0.90;58.01;0.90;58.35;0.90;58.55;0.90;58.91;0.90;58.95;0.70;59.05;0.70;59.17;0.70;59.26;0.70;59.34;0.70;59.61;0.90;59.80;0.90;60.00;0.90;60.20;0.90;60.56;0.90;60.71;0.90;60.98;0.90;61.32;0.90;61.46;0.90;61.84;0.70;61.85;0.90;61.89;0.70;61.99;0.70;62.06;0.70;62.14;0.70;62.22;0.70;62.31;0.70;62.52;0.70;62.59;0.70;62.81;0.90;62.99;0.90;63.33;0.90;63.51;0.90;63.70;0.90;63.88;0.90;64.20;0.90;64.40;0.90;64.81;0.90;64.82;1.00;64.96;0.90;65.16;0.90;65.35;0.90;65.73;0.90;65.90;0.90;66.11;0.90;66.46;0.90;66.63;0.90;66.83;0.90;67.33;0.90;67.51;0.90;67.73;0.90;67.96;0.90;68.15;0.90;68.31;0.90;68.66;0.90;69.03;0.90;69.06;0.70;69.14;0.70;69.22;0.70;69.26;0.70;69.45;0.70;69.59;0.70;69.66;0.70;69.74;0.70;69.82;0.70;69.86;0.70;69.92;0.70;70.68;0.90;70.88;0.90;71.06;0.90;71.26;0.90;71.45;0.90;71.63;0.90;71.81;0.90;72.00;0.90;72.18;0.90;72.37;0.90;72.53;0.90;72.73;0.90;72.90;0.90;73.63;0.90;73.83;0.90;74.01;0.90;74.20;0.90;74.53;0.90;74.93;0.90;75.26;0.90;75.65;0.90;75.83;0.90;76.21;0.90;76.53;1.00;76.58;0.90;76.96;0.90;77.35;0.90;77.53;0.90;77.90;0.90;77.97;0.70;78.09;0.70;78.16;0.70;78.27;0.70;78.34;0.70;78.42;0.70;78.51;0.70;78.67;0.70;79.15;0.90;79.55;0.90;79.71;0.90;79.90;0.90;80.28;0.90;80.66;0.90;80.84;0.90;81.21;0.90;81.40;0.90;81.78;0.90;82.15;0.90;82.55;0.90;82.89;0.90;83.23;0.90;83.40;0.90;83.73;0.90;83.76;0.70;83.87;0.70;83.94;0.70;84.01;0.70;84.09;0.70;84.26;0.70;84.32;0.70;84.42;0.70;84.49;0.70;85.03;0.90;85.41;0.90;85.58;0.90;85.76;0.90;86.11;0.90;86.51;0.90;86.70;0.90;87.05;0.90;87.23;0.90;87.60;0.90;88.00;0.90;88.27;0.70;88.32;1.00;88.34;0.70;88.36;0.90;88.42;0.70;88.52;0.70;88.61;0.70;88.69;0.70;88.79;0.70;88.94;0.70;89.22;0.70;89.34;0.70";
-    case 16: return "0.20;0.90;0.63;0.70;0.83;0.70;1.06;0.70;1.27;0.90;1.28;0.70;1.51;0.70;1.75;0.70;1.88;0.90;1.93;0.70;2.16;0.70;2.38;0.70;2.63;0.70;2.83;0.70;3.00;0.90;3.08;0.70;3.31;0.70;3.55;0.70;3.65;0.90;3.73;0.70;3.93;0.90;3.96;0.70;4.16;0.70;4.27;0.90;4.40;0.70;4.61;0.70;4.77;0.90;4.81;0.70;4.98;0.90;5.06;0.70;5.30;0.70;5.42;0.90;5.53;0.70;5.76;0.70;5.77;0.90;5.96;0.70;6.08;0.90;6.20;0.70;6.41;0.70;6.55;0.90;6.68;0.70;6.75;0.90;6.88;0.70;7.13;0.70;7.20;0.90;7.33;0.70;7.55;0.70;7.71;0.70;7.93;0.70;8.18;0.70;8.30;0.90;8.40;0.70;8.63;0.70;8.86;0.70;8.97;0.90;9.06;0.70;9.31;0.70;9.55;0.70;9.75;0.70;9.95;0.70;10.12;0.90;10.16;0.70;10.41;0.70;10.63;0.70;10.77;0.90;10.81;0.70;11.06;0.70;11.08;0.90;11.30;0.70;11.40;0.90;11.55;0.70;11.75;0.70;11.93;0.90;11.95;0.70;12.13;0.90;12.16;0.70;12.40;0.70;12.57;0.90;12.61;0.70;12.86;0.70;12.90;0.90;13.08;0.70;13.15;0.90;13.28;0.70;13.53;0.70;13.67;0.90;13.75;0.70;13.85;0.90;13.96;0.70;14.25;0.70;14.28;1.00;14.33;0.90;14.68;0.90;14.95;0.70;15.00;0.90;15.10;0.70;15.17;0.90;15.20;0.70;15.32;0.90;15.36;0.70;15.50;0.90;15.53;0.70;15.70;0.90;15.77;0.90;16.15;0.90;16.43;0.90;16.56;0.70;16.70;0.70;16.77;0.90;16.80;0.70;16.92;0.90;16.95;0.70;17.02;0.90;17.11;0.70;17.25;0.90;17.28;0.70;17.43;0.90;17.57;0.90;17.75;0.70;17.83;1.00;17.88;0.90;18.05;0.70;18.18;0.90;18.35;0.70;18.48;0.70;18.55;0.90;18.61;0.70;18.70;0.90;18.84;0.90;18.85;0.70;19.03;0.70;19.05;0.90;19.20;0.70;19.25;0.90;19.53;0.70;19.72;0.90;19.85;0.70;20.02;0.90;20.11;0.70;20.26;0.70;20.32;0.90;20.40;0.70;20.43;0.90;20.57;0.90;20.65;0.70;20.78;0.90;20.83;0.70;21.00;0.90;21.28;0.70;21.42;1.00;21.45;0.90;21.63;0.70;21.77;0.90;21.83;0.70;21.96;0.70;22.03;0.90;22.08;0.70;22.13;0.90;22.21;0.70;22.25;0.90;22.37;0.90;22.45;0.70;22.58;0.90;22.61;0.70;22.76;0.70;22.77;0.90;22.88;0.90;23.06;0.70;23.23;0.90;23.38;0.70;23.55;0.90;23.77;0.90;23.80;0.70;23.92;0.90;23.93;0.70;24.03;0.90;24.03;0.70;24.15;0.90;24.23;0.70;24.38;0.90;24.40;0.70;24.57;0.90;24.85;0.70;24.93;1.00;24.98;0.90;25.16;0.70;25.33;0.90;25.43;0.70;25.62;0.90;25.65;0.70;25.72;0.90;25.73;0.70;25.83;0.90;25.96;0.70;26.11;0.70;26.12;0.90;26.30;0.90;26.63;0.70;26.80;0.90;26.91;0.70;27.10;0.90;27.43;0.70;27.47;0.90;27.55;0.70;27.62;0.90;27.66;0.70;27.87;0.90;28.05;0.90;28.25;0.90;28.43;0.90;28.48;1.00;28.63;0.90;28.98;0.90;29.06;0.70;29.22;0.90;29.23;0.70;29.48;0.90;29.48;0.70;29.63;0.70;29.78;0.90;30.10;0.90;30.32;0.90;30.53;0.70;30.63;0.70;30.75;0.90;30.78;0.70;30.90;0.70;30.98;0.90;31.20;0.90;31.55;0.90;31.85;0.90;32.08;0.90;32.25;0.70;32.38;0.70;32.48;0.70;32.52;0.90;32.61;0.70;32.73;0.90;32.98;0.90;33.03;0.70;33.33;0.90;33.65;0.90;33.90;0.90;34.05;0.70;34.18;0.70;34.31;0.70;34.32;0.90;34.45;0.70;34.53;0.90;34.75;0.90;35.10;0.90;35.23;0.90;35.45;0.90;35.67;0.90;35.80;0.70;35.93;0.70;36.06;0.70;36.12;0.90;36.20;0.70;36.35;0.90;36.57;0.90;36.90;0.90;37.22;0.90;37.44;0.90;37.58;0.70;37.70;0.70;37.81;0.70;37.87;0.90;37.95;0.70;38.08;0.90;38.30;0.90;38.67;0.90;38.93;0.90;39.17;0.90;39.35;0.70;39.48;0.70;39.61;0.70;39.65;0.90;39.78;0.70;39.88;0.90;40.10;0.90;40.13;0.70;40.42;0.90;40.73;0.90;40.95;0.90;41.21;0.70;41.31;0.70;41.42;0.90;41.43;0.70;41.55;0.70;41.65;0.90;41.85;0.90;42.32;0.90;42.77;1.00;42.80;0.90;43.10;0.90;43.25;0.70;43.38;0.70;43.45;0.90;43.53;0.70;43.57;0.90;43.65;0.70;43.70;0.90;43.76;0.70;43.93;0.90;43.96;0.70;44.12;0.90;44.58;0.90;44.88;0.90;45.15;0.90;45.28;0.90;45.38;0.90;45.65;0.90;45.87;0.90;46.30;1.00;46.33;0.90;46.63;0.90;46.93;0.90;47.05;0.90;47.17;0.90;47.42;0.90;47.68;0.90;48.01;0.70;48.12;0.90;48.20;0.70;48.42;0.90;48.43;0.70;48.68;0.70;48.75;0.90;48.88;0.70;49.11;0.70;49.12;0.90;49.35;0.70;49.38;1.00;49.42;0.90;49.53;0.70;49.76;0.70;49.85;1.00;49.88;0.90;49.96;0.70;50.02;1.00;50.08;0.90;50.20;0.70;50.43;0.70;50.52;0.90;50.65;0.70;50.84;0.90;50.88;0.70;50.95;0.90;51.07;0.90;51.11;0.70;51.29;0.90;51.31;0.70;51.55;0.70;51.70;0.90;51.76;0.70;51.96;0.70;51.97;0.90;52.18;0.70;52.27;0.90;52.38;0.70;52.47;0.90;52.59;0.90;52.66;0.70;52.88;0.70;52.95;1.00;53.02;0.90;53.13;0.70;53.33;0.70;53.37;1.00;53.42;0.90;53.51;0.70;53.58;1.00;53.60;0.90;53.75;0.70;53.95;0.70;54.07;0.90;54.08;1.00;54.18;0.70;54.43;0.70;54.63;0.70;54.70;0.90;54.85;0.70;54.94;0.90;55.10;0.70;55.17;0.90;55.28;0.70;55.45;0.90;55.50;0.70;55.69;0.90;55.70;0.70;55.82;0.90;55.93;0.70;55.97;0.90;56.18;0.70;56.40;0.70;56.63;0.70;56.85;0.70;56.94;0.90;56.98;1.00;57.24;0.90;57.49;0.90;57.64;0.90;57.79;0.90;58.34;0.90;58.61;0.70;58.77;1.00;58.82;0.90;58.85;0.70;58.99;0.90;59.11;0.70;59.27;0.90;59.40;0.90;59.50;0.70;59.55;0.90;59.73;0.70;59.98;0.70;60.25;0.70;60.30;0.90;60.45;0.70;60.55;0.90;60.65;0.70;60.77;0.90;60.88;0.70;61.00;0.90;61.10;0.70;61.17;0.90;61.29;0.90;61.31;0.70;61.53;0.70;61.75;0.70;61.98;0.70;62.10;0.90;62.21;0.70;62.35;0.90;62.41;0.70;62.59;0.90;62.66;0.70;62.80;0.90;62.88;0.70;62.92;0.90;63.09;0.90;63.10;0.70;63.33;0.70;63.58;0.70;63.64;0.90;63.78;0.70;63.80;0.90;64.01;0.70;64.14;0.90;64.23;0.70;64.29;0.90;64.43;0.70;64.47;0.90;64.66;0.70;64.70;0.90;64.84;0.90;64.86;0.70;65.01;0.90;65.06;0.70;65.31;0.70;65.53;0.70;65.69;0.90;65.75;0.70;65.92;0.90;65.95;0.70;66.14;0.90;66.18;0.70;66.37;0.90;66.41;0.70;66.50;0.90;66.61;0.70;66.65;0.90;66.86;0.70;67.06;0.70;67.33;0.70;67.42;0.90;67.55;0.70;67.67;0.90;67.76;0.70;67.89;0.90;67.98;0.70;68.12;0.90;68.20;0.70;68.29;0.90;68.42;0.90;68.43;0.70;68.52;0.90;68.66;0.70;68.86;0.70;69.13;0.70;69.22;0.90;69.33;0.70;69.45;0.90;69.53;0.70;69.62;0.90;69.78;0.70;69.92;0.90;69.98;0.70;70.07;0.90;70.19;0.90;70.20;0.70;70.45;0.70;70.67;0.70;70.77;0.90;70.88;0.70;70.99;0.90;71.08;0.70;71.27;0.90;71.33;0.70;71.39;0.90;71.55;0.70;71.57;0.90;71.76;0.70;71.82;0.90;71.94;0.90;71.98;0.70;72.17;0.90;72.64;0.90;72.75;0.90;72.95;1.00;73.09;0.90;73.42;0.90;73.50;0.70;73.57;0.90;73.76;0.70;73.79;0.90;73.95;0.70;74.20;0.70;74.27;0.90;74.41;0.70;74.42;0.90;74.61;0.70;74.79;0.90;74.86;0.70;75.00;0.90;75.03;0.70;75.22;0.90;75.33;0.70;75.34;0.90;75.47;0.90;75.53;0.70;75.57;0.90;75.73;0.70;75.96;0.70;76.09;0.90;76.19;0.90;76.20;0.70;76.34;0.90;76.45;0.70;76.53;1.00;76.59;0.90;76.63;0.70;76.87;0.70;77.00;0.90;77.05;0.70;77.17;0.90;77.30;0.70;77.39;0.90;77.50;0.70;77.72;0.70;77.89;0.90;77.98;0.70;78.04;0.90;78.15;0.90;78.20;0.70;78.40;0.90;78.43;0.70;78.60;0.90;78.61;0.70;78.84;0.90;78.90;0.70;78.99;0.90;79.12;0.90;79.13;0.70;79.30;0.70;79.56;0.70;79.67;0.90;79.76;0.70;79.79;0.90;79.94;0.90;80.01;0.70;80.20;0.90;80.20;0.70;80.40;0.70;80.55;0.90;80.65;0.70;80.85;0.90;80.85;0.70;81.00;0.90;81.05;0.70;81.26;0.70;81.48;0.70;81.55;0.90;81.69;0.90;81.71;0.70;81.82;0.90;81.96;0.70;82.18;0.70;82.22;0.90;82.34;0.90;82.41;0.70;82.63;0.70;82.65;0.90;82.80;0.90;82.86;0.70;83.02;0.90;83.06;0.70;83.28;0.70;83.40;0.90;83.55;0.90;83.55;0.70;83.69;0.90;83.75;0.70;83.98;0.70;84.20;0.70;84.29;0.90;84.44;0.90;84.45;0.70;84.65;0.70;84.67;0.90;84.93;0.70;85.10;0.70;85.14;0.90;85.26;0.70;85.27;0.90;85.40;0.90;85.48;0.70;85.67;0.90;85.92;0.90;86.14;0.90;86.27;0.90;86.37;0.90;86.67;0.90;87.06;0.70;87.18;1.00;87.22;0.90;87.23;0.70;87.47;0.90;87.83;0.70;88.00;0.90;88.25;0.70;88.46;0.70;88.65;0.70;88.86;0.70;89.08;0.70;89.26;0.70;89.51;0.70;89.75;0.70;89.98;0.70;90.18;0.70;90.19;0.90;90.38;0.70;90.42;0.90;90.55;0.90;90.63;0.70;90.82;0.90;90.85;0.70;90.99;0.90;91.10;0.70;91.33;0.70;91.56;0.70;91.76;0.70;92.01;0.70;92.21;0.70;92.43;0.70;92.66;0.70;92.86;0.70;93.08;0.70;93.31;0.70;93.51;0.70;93.75;0.70;93.96;0.70;94.14;0.90;94.20;0.70;94.29;0.90;94.43;0.70;94.44;0.90;94.66;0.70;94.86;0.70;94.87;0.90;95.11;0.70;95.27;0.90;95.31;0.70;95.53;0.70;95.70;0.90;95.76;0.70;95.98;0.70;96.15;0.90;96.21;0.70;96.41;0.70;96.57;0.90;96.68;0.70;96.88;0.70;97.02;0.90;97.13;0.70;97.33;0.70;97.44;0.90;97.53;0.70;97.75;0.70;97.89;0.90;97.98;0.70;98.33;0.70;98.50;0.70;98.75;0.70;98.98;0.70;99.13;0.70;99.17;0.90;99.37;0.70;99.58;0.70;99.67;0.90";
-    case 17: return "0.21;0.80;0.41;0.80;0.86;0.80;1.14;0.70;1.15;0.80;1.23;0.70;1.31;0.80;1.75;0.80;1.93;0.80;2.00;0.70;2.16;0.70;2.23;0.80;2.31;0.70;2.45;0.70;2.56;0.70;2.63;0.80;3.00;0.80;3.16;0.80;3.58;0.80;3.73;0.80;4.03;0.80;4.48;0.80;4.80;0.80;4.96;0.80;5.40;0.80;5.50;0.70;5.55;0.80;5.73;0.70;5.85;0.80;5.90;0.70;6.03;0.70;6.26;0.80;6.61;0.80;6.78;0.80;7.20;0.80;7.36;0.80;7.37;0.70;7.66;0.80;7.68;0.70;7.87;0.70;8.07;0.70;8.08;0.80;8.22;0.70;8.40;0.70;8.43;0.80;8.58;0.70;8.60;0.80;9.00;0.80;9.03;0.70;9.18;0.80;9.35;0.70;9.48;0.70;9.50;0.80;9.80;0.70;9.88;0.80;9.94;0.70;10.08;0.70;10.24;0.70;10.35;0.70;10.50;0.70;10.63;0.70;10.80;0.70;10.90;1.00;11.30;0.90;11.46;0.90;11.58;0.70;11.75;0.90;11.79;0.70;11.91;0.90;12.08;0.90;12.21;0.90;12.36;0.90;12.68;0.90;12.85;0.90;13.10;0.90;13.50;0.90;13.65;0.90;13.70;0.90;13.85;0.90;13.95;0.90;14.13;0.90;14.45;0.70;14.46;0.90;14.62;0.70;14.63;0.90;14.96;0.90;15.11;0.90;15.56;0.90;15.73;0.90;15.85;0.70;15.90;0.90;16.06;0.90;16.07;0.70;16.31;0.90;17.21;1.00;17.38;0.90;17.66;1.00;17.83;0.90;18.09;0.70;18.25;0.70;18.28;0.90;18.41;0.90;18.42;0.70;18.57;0.70;18.58;0.90;18.76;0.90;18.90;0.90;18.90;0.70;19.05;0.70;19.08;0.90;19.21;0.90;19.22;0.70;19.37;0.70;19.38;0.90;19.53;0.90;19.68;0.90;20.00;0.90;20.11;0.90;20.38;0.90;20.49;0.70;20.60;0.70;20.73;0.90;20.73;0.70;20.80;0.90;20.88;0.70;20.90;0.90;21.06;0.90;21.10;0.70;21.17;0.90;21.30;0.90;21.48;0.90;21.81;0.90;21.98;0.90;22.26;0.90;22.40;0.90;22.73;0.90;22.75;0.70;22.86;0.90;22.97;0.70;23.01;0.90;23.17;0.90;23.30;0.90;23.76;0.90;23.93;0.90;24.08;0.90;24.25;0.90;24.40;0.90;24.58;0.90;24.73;0.90;24.86;0.90;25.01;0.90;25.16;0.90;25.37;0.70;25.41;1.00;25.50;0.70;25.53;0.90;25.65;0.70;25.70;0.90;25.84;0.70;25.88;0.90;26.01;0.90;26.17;0.70;26.35;0.90;26.37;0.70;26.51;0.90;26.53;0.70;26.68;0.90;26.91;0.90;27.26;0.90;27.43;0.90;27.68;0.90;27.80;0.70;27.93;0.70;27.96;0.90;28.06;0.90;28.07;0.70;28.16;0.90;28.22;0.70;28.26;0.90;28.35;0.90;28.41;0.90;28.53;0.90;28.73;0.90;29.02;0.70;29.05;0.90;29.06;1.00;29.15;0.70;29.23;0.90;29.30;0.70;29.47;0.70;29.53;0.90;29.68;0.90;29.82;0.70;29.95;0.90;29.95;0.70;30.10;0.90;30.14;0.70;30.28;0.90;30.30;0.70;30.43;0.90;30.45;0.70;30.56;0.90;30.74;0.70;30.84;1.00;30.86;0.90;30.88;0.70;31.10;0.90;32.61;1.00;32.72;0.70;32.81;0.90;32.85;0.70;33.00;0.70;33.17;0.70;33.40;0.90;33.76;0.90;34.00;0.70;34.12;0.70;34.26;0.90;34.70;0.90;34.98;0.90;35.13;0.90;35.37;0.70;35.39;1.00;35.52;0.70;35.58;0.90;35.91;0.90;36.06;0.90;36.51;0.90;36.93;0.90;37.38;0.90;37.86;0.90;38.33;0.90;38.78;0.90;39.20;0.90;39.33;0.90;39.51;0.90;39.65;0.90;40.13;0.90;40.55;0.90;40.83;0.70;40.85;1.00;41.00;0.70;41.01;0.90;41.15;0.70;41.51;0.90;41.96;0.90;42.25;0.90;42.38;0.90;42.63;1.00;42.67;0.70;42.82;0.70;42.85;0.90;42.98;0.70;43.05;0.70;43.20;0.90;43.35;0.90;43.76;0.90;44.21;0.90;44.55;0.70;44.70;0.90;44.80;0.70;45.00;0.70;45.13;0.90;45.35;0.70;45.48;0.70;45.65;0.70;45.82;0.70;45.95;0.70;46.10;0.70;46.23;0.70;46.35;0.70;46.47;0.70;46.60;0.70;46.70;0.70;46.82;0.70;46.88;0.70;47.05;0.70;47.13;0.70;47.20;0.70;47.21;1.00;48.19;0.70;48.23;0.90;48.30;0.70;48.71;0.90;48.92;0.70;49.08;0.70;49.21;0.90;49.65;0.90;49.93;1.00;50.11;0.90;50.56;0.90;51.12;0.70;51.23;0.70;51.32;0.90;51.48;0.90;51.78;0.90;51.78;0.70;51.97;0.90;52.27;0.90;52.42;0.90;52.68;0.90;52.68;0.70;52.78;0.70;52.83;0.90;52.88;0.70;53.02;0.70;53.17;0.90;53.17;0.70;53.23;0.70;53.32;0.90;53.38;0.70;53.52;0.70;53.63;0.90;53.63;0.70;53.80;0.90;54.08;0.90;54.25;0.90;54.52;0.90;54.55;0.70;54.72;0.70;54.83;0.70;54.88;1.00;54.95;0.70;55.18;0.70;55.70;0.90;55.82;0.70;55.91;1.00;55.95;0.70;56.07;0.70;56.17;0.70;56.18;1.00;56.32;0.70;56.34;1.00;56.37;0.90;56.52;0.90;56.66;1.00;56.77;0.90;56.77;0.70;56.84;1.00;56.92;0.90;57.00;1.00;57.09;0.90;57.22;0.90;57.34;1.00;57.42;0.90;57.63;1.00;57.72;0.90;57.89;1.00;58.03;0.90;58.16;1.00;58.34;0.90;58.97;1.00;58.97;0.70;59.10;0.70;59.12;0.90;59.25;0.70;60.22;0.70;60.32;0.70;60.45;0.70;60.53;0.70;60.88;0.70;61.02;0.90;61.02;0.70;61.17;0.70;61.30;0.70;61.43;0.70;61.82;0.70;61.98;0.70;62.17;0.70;62.35;0.70;62.74;0.70;63.05;0.70;63.77;0.80;64.01;0.70;64.02;0.80;64.18;0.80;64.52;0.80;64.69;0.80;64.98;0.80;65.15;0.80;65.30;0.80;65.47;0.80;65.59;0.80;65.93;0.80;66.08;0.80;66.34;0.80;66.50;0.80;66.80;0.80;66.95;0.80;67.12;0.80;67.25;0.80;67.40;0.80;67.72;0.80;67.90;0.80;68.15;0.80;68.32;0.80;68.59;0.80;68.73;0.80;68.90;0.80;69.03;0.70;69.05;0.80;69.20;0.70;69.35;0.70;69.52;0.70;69.65;0.70;69.78;0.70;69.93;0.70;70.12;0.70;70.23;0.70;70.40;0.70;70.54;0.70;70.70;0.70;70.84;0.70;70.98;0.70;71.00;0.90;71.15;0.70;71.28;0.70;71.35;0.70;71.37;0.90;71.48;0.70;71.53;0.90;71.58;0.70;71.72;0.70;71.93;0.90;72.32;0.90;72.63;0.70;72.65;1.00;72.80;0.90;72.80;0.70;72.93;0.70;73.07;0.70;73.15;0.90;73.17;0.70;73.30;0.70;73.32;0.90;73.37;0.70;73.49;0.70;73.60;0.70;73.62;0.90;73.77;0.90;73.80;0.70;73.90;0.70;74.02;0.70;74.05;0.90;74.12;0.70;74.18;0.90;74.20;0.70;74.32;0.70;74.33;0.90;74.43;0.70;74.52;1.00;74.63;0.90;74.98;0.90;75.15;0.90;75.30;0.90;75.48;0.90;75.92;0.90;76.32;0.90;76.48;0.90;76.78;0.90;76.98;0.70;77.10;0.90;77.10;0.70;77.22;0.90;77.27;0.70;77.38;0.90;77.48;0.90;77.60;0.90;77.75;0.90;77.92;0.90;78.11;1.00;78.15;0.70;78.18;0.90;78.27;0.70;78.33;0.90;78.52;0.70;78.60;0.90;78.68;0.70;78.75;0.90;78.85;0.70;78.88;0.90;79.03;0.90;79.42;0.90;79.45;0.70;79.55;0.70;79.57;0.90;79.72;0.90;80.02;0.90;80.78;0.70;80.89;1.00;80.90;0.70;80.98;0.90;81.36;1.00;81.48;0.90;81.62;0.70;81.75;0.70;81.90;0.70;81.92;0.90;82.07;0.90;82.07;0.70;82.22;0.90;82.42;0.90;82.55;0.90;82.72;0.90;82.87;0.90;83.04;0.90;83.17;0.90;83.30;0.90;83.56;1.00;83.63;0.90;83.89;0.90;84.03;0.90;84.22;0.70;84.31;0.90;84.33;0.70;84.40;0.90;84.50;0.70;84.53;0.90;84.58;0.90;84.66;0.90;84.83;0.90;85.01;0.90;85.13;0.90;85.41;1.00;85.43;0.90;85.58;0.90;85.75;0.70;85.85;0.90;85.85;0.70;85.98;0.90;86.30;0.70;86.33;0.90;86.45;0.70;86.48;0.90;86.55;0.70;86.61;0.90;86.70;0.70;86.76;0.90;86.91;0.90;87.20;0.70;87.21;0.90;87.23;1.00;87.32;0.70;87.41;0.90;87.47;0.70;87.62;0.70;87.73;0.70;87.82;0.70;87.93;0.70;88.07;0.70;88.15;0.70;88.25;0.70;88.37;0.70;88.48;0.70;88.55;0.70;88.65;0.70;88.75;0.70;88.89;0.70;89.01;1.00;89.25;0.80;89.68;0.80;90.13;0.80;90.61;0.80;91.05;0.80;91.37;0.80;91.52;0.80;91.93;0.80;92.23;0.80;92.40;0.80";
-    default: return "0.00;0.00";
-  }
+class LevelTools {
+
+};
+
+struct SongCache {
+    float bpm;
+    float duration;
+    bool ready;
+    SongCache(float b = 0.0f, float d = 0.0f, bool r = false) 
+        : bpm(b), duration(d), ready(r) {}
+};
+std::unordered_map<std::string, SongCache> g_songCache;
+std::mutex g_cacheMutex;
+
+CustomSongData getSongData(const char* filePath, FMOD::System* system) {
+    FMOD::Sound* sound = nullptr;
+    FMOD_RESULT result = system->createSound(filePath, FMOD_CREATESAMPLE | FMOD_ACCURATETIME, nullptr, &sound);
+    if (result != FMOD_OK) return { 0.0f, 0.0f };
+
+    unsigned int lengthPCM, lengthMS;
+    int channels;
+    float freq;
+    
+    sound->getLength(&lengthPCM, FMOD_TIMEUNIT_PCM);
+    sound->getLength(&lengthMS, FMOD_TIMEUNIT_MS);
+    sound->getFormat(nullptr, nullptr, &channels, nullptr);
+    sound->getDefaults(&freq, nullptr);
+    void *ptr1, *ptr2;
+    unsigned int len1, len2;
+    sound->lock(0, lengthPCM * channels * sizeof(short), &ptr1, &ptr2, &len1, &len2);
+    
+    short* pcmData = (short*)ptr1;
+    unsigned int totalSamples = len1 / (sizeof(short) * channels);
+    std::vector<float> monoBuffer;
+    monoBuffer.reserve(totalSamples);
+
+    for (unsigned int i = 0; i < totalSamples * channels; i += channels) {
+        float s = 0;
+        for (int c = 0; c < channels; ++c) s += pcmData[i + c];
+        monoBuffer.push_back((s / (float)channels) / 32768.0f);
+    }
+
+    breakfastquay::MiniBPM minibpm(freq);
+    minibpm.process(monoBuffer.data(), monoBuffer.size());
+    float bpm = (float)minibpm.estimateTempo();
+
+    sound->unlock(ptr1, ptr2, len1, len2);
+    sound->release();
+
+    return { bpm, (float)lengthMS / 1000.0f };
 }
-  */
+
+std::string generateAudioString(float bpm, float duration, float intensity = 0.9f) {
+    std::string result = "";
+    float beatInterval = 60.0f / bpm;
+    for (float time = 0.0f; time < duration; time += beatInterval) {
+        result += to_string(time) + ";" + to_string(intensity) + ";";
+    }
+    return result;
+}
+
+struct RawStr { char* data; size_t size; size_t cap; };
+
+void* (*LevelTools_getAudioString)(void* self, int ID);
+void* LevelTools_getAudioString_H(void* self, int ID) {
+    LevelTools_getAudioString(self, (ID > SONGS) ? 5 : ID);
+    if (ID > SONGS) {
+        std::string path = LevelTools_getAudioFilename_H(ID);
+        std::string generated;
+        {
+            std::lock_guard<std::mutex> lock(g_cacheMutex);
+            auto it = g_songCache.find(path);
+            if (it != g_songCache.end() && it->second.ready) {
+                generated = generateAudioString(it->second.bpm, it->second.duration, 0.9f);
+            } else {
+                if (it == g_songCache.end()) {
+                    g_songCache[path] = SongCache(0.0f, 0.0f, false);
+                    std::thread([path]() {
+                        CustomSongData data = getSongData(path.c_str(), fmodSystem);
+                        std::lock_guard<std::mutex> innerLock(g_cacheMutex);
+                        g_songCache[path] = SongCache(data.bpm, data.duration, true);
+                    }).detach();
+                }
+                generated = "0;0.9;";
+            }
+        }
+        RawStr* strObj = reinterpret_cast<RawStr*>(self);
+        uint32_t actualCap = strObj->cap & 0x3FFFFFFF;
+        if (strObj->data && actualCap >= generated.length()) {
+            memcpy(strObj->data, generated.c_str(), generated.length());
+            strObj->data[generated.length()] = '\0';
+            strObj->size = generated.length();
+        } else {
+            uint32_t fitLen = (actualCap > 0) ? actualCap - 1 : 0;
+            if (fitLen > 0 && strObj->data) {
+                memcpy(strObj->data, generated.c_str(), fitLen);
+                strObj->data[fitLen] = '\0';
+                strObj->size = fitLen;
+            }
+        }
+    }
+    return self;
+}
+
+
+
+
+
 
 int (*LevelTools_artistForAudio)(int);
 int LevelTools_artistForAudio_H(int ID) {
@@ -1192,6 +2098,10 @@ cocos2d::CCArray* getPlayLayerHazards(PlayLayer* playLayer) {
 void (*PlayLayer_destroyPlayer)(PlayLayer*);
 void PlayLayer_destroyPlayer_H(PlayLayer* self) {
   if (!noclip) {
+    CCDirector* director = CCDirector::sharedDirector();
+    CCScheduler* scheduler = director->getScheduler();
+    if(noRespawn) scheduler->setTimeScale(99.0f);
+    if(noRespawn) noRespawnReset = true;
     PlayLayer_destroyPlayer(self);
     auto audioEngine = CocosDenshion::SimpleAudioEngine::sharedEngine();
     if(MEMBER_BY_OFFSET(int, self, 0x29d) && pmh) audioEngine->pauseBackgroundMusic(); // check for practice mode
@@ -1199,41 +2109,124 @@ void PlayLayer_destroyPlayer_H(PlayLayer* self) {
   else if(noclip) {
     if (lastDeadFrame < frameCount - 1) {
             deaths++;
-            if(ExtraLayer::m_flash) self->triggerRedPulse(0.5f);
-            self->pulseLabelRed(deathsLabel, 0.5f);
-            deathsLabel->setString(
-                CCString::createWithFormat("%i deaths", deaths)->getCString()
-            );
+            if(ExtraLayer::m_flash) self->triggerCustomPulse(0.5f);
         }
         lastDeadFrame = frameCount;
     MEMBER_BY_OFFSET(cocos2d::CCArray*, self, 0x18c)->removeAllObjects();
   } 
+
   return;
 }
 
+std::string version = "0";
+
+VersionRequest* VersionRequest::sharedRequest() {
+  VersionRequest* request = new VersionRequest();
+  return request;
+}
+
+void MenuLayer::checkVersionIsOutdated() {
+    MenuLayer::s_hasVersionData = false;
+    VersionRequest::sharedRequest()->fetchVersion();
+    this->schedule(schedule_selector(MenuLayer::versionCheckPoll), 0.1f);
+}
+
+void MenuLayer::versionCheckPoll(float dt) {
+    if (MenuLayer::s_hasVersionData) {
+        this->unschedule(schedule_selector(MenuLayer::versionCheckPoll));
+        
+        std::string fetchedVersion = std::string(MenuLayer::s_newVersion.load());
+        if (fetchedVersion != currentSpecificVersion) {
+        version = fetchedVersion;
+            this->showUpdateAlert(0);
+        }
+        MenuLayer::s_hasVersionData = false;
+    }
+CCFadeOut* fadeout = CCFadeOut::create(2.f);
+CCCallFunc* callback = CCCallFunc::create(updateLabel, callfunc_selector(CCNode::removeFromParentAndCleanup));
+auto sequence = CCSequence::create(fadeout, callback, NULL);
+
+updateLabel->runAction(sequence);
+}
+
+
+void MenuLayer::showUpdateAlert(float dt) {
+  if (!this->isRunning()) return;
+
+    auto alert = FLAlertLayer::create(
+        this,
+        "New update found!",
+        CCString::createWithFormat("Your version of VioletPS is <cr>outdated</c>, download the new version to obtain the new features! \n\n<cy>Your version:</c> %s\n<cp>New version:</c> %s", currentSpecificVersion.c_str(), version.c_str())->getCString(),
+        "OK", "Download", 300.f
+    );
+    alert->setTag(1001);
+    alert->show();
+    ExtraLayer::uploadNotAllowed_ = true;
+}
 
 void (*MenuLayer_init)(MenuLayer*);
 void MenuLayer_init_H(MenuLayer* self) {
+ExtraLayer::onLoadSettings();
+if(playerControl) {
+onToggleControl(true);
+auto pivot = PivotMenuLayer::create();
+self->addChild(pivot, -1); 
+} else onToggleControl(false);
 MenuLayer_init(self);
-auto buttonMenu = CCMenu::create();
+musicVolume = CCUserDefault::sharedUserDefault()->getFloatForKey("musicVolume", 1.0f);
+auto gman = GameManager::sharedState();
+// if(MEMBER_BY_OFFSET(int, gman, 0x171)) CocosDenshion::SimpleAudioEngine::sharedEngine()->setBackgroundMusicVolume(musicVolume);
 auto win_size = CCDirector::sharedDirector()->getWinSize();
+if(!checked) {
+updateLabel = CCLabelBMFont::create(
+            CCString::createWithFormat("Checking for updates")->getCString(), 
+            "goldFont-hd.fnt"
+        );
+
+  updateLabel->setPosition({win_size.width / 2, 100});
+  updateLabel->setScale(0.5f);
+  self->addChild(updateLabel);
+if(!warnedOutdated) self->checkVersionIsOutdated();
+}
+
+if(iconHack) onToggleIcon(true);
+else onToggleIcon(false);
+checked = true;
+MenuLayer::sharedLayer = self;
+auto buttonMenu = CCMenu::create();
 auto button = CCSprite::createWithSpriteFrameName("GJ_closeBtn_001.png");
 CCMenuItemSpriteExtra* menuBtn = CCMenuItemSpriteExtra::create(button, button, self, menu_selector(MenuLayer::keyBackClicked));
 menuBtn->setPosition({-25,-25});
 buttonMenu->setPosition({win_size.width, win_size.height});
 buttonMenu->addChild(menuBtn);
-self->addChild(buttonMenu);
-ExtraLayer::onLoadSettings();
 iconHack = CCUserDefault::sharedUserDefault()->getBoolForKey("iconHack", false);
+// i give up fuck this shit i wanna di
+/*
+auto button2 = CCSprite::create("GJ_violetMod_001.png");
+CCMenuItemSpriteExtra* menuBtn2 = CCMenuItemSpriteExtra::create(button2, button2, self, menu_selector(MenuLayer::onOpenMenu));
+CCMenu* bottomMenu;
+if(!playerControl) bottomMenu = static_cast<CCMenu*>(self->getChildren()->objectAtIndex(self->getChildrenCount() - 3));
+else bottomMenu = static_cast<CCMenu*>(self->getChildren()->objectAtIndex(self->getChildrenCount() - 2));
+CCArray* menuChildren = bottomMenu->getChildren();
+bottomMenu->addChild(menuBtn2); 
+if (menuChildren && menuChildren->count() > 1) {
+    menuChildren->removeObject(menuBtn2, false);
+    menuChildren->insertObject(menuBtn2, 0);
+    }
+bottomMenu->alignItemsHorizontallyWithPadding(5.0f);
+if(exitButton) self->addChild(buttonMenu);
+*/
 }
 
 void (*PauseLayer_customSetup)(CCLayer* self);
 void PauseLayer_customSetup_H(CCLayer* self) {
 PauseLayer_customSetup(self);
+HidePauseLayer::m_pauseLayer = self;
 CCDirector::sharedDirector()->getScheduler()->setTimeScale(1.0f);
+changeAllChannelsPitch(1.0f);
 ExtraLayer::saveSettingsToFile();
 auto win_size = CCDirector::sharedDirector()->getWinSize();
-  auto buttonMenu = CCMenu::create();
+auto buttonMenu = CCMenu::create();
 auto infobutton = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
 CCMenuItemSpriteExtra* menuBtn = CCMenuItemSpriteExtra::create(infobutton, infobutton, self, menu_selector(ToggleHack::showAtts));
 menuBtn->setPosition({-20,-20});
@@ -1245,8 +2238,18 @@ buttonMenu->addChild(menuBtn);
 self->addChild(buttonMenu);
 }
 
- auto buttonMenu2 = CCMenu::create();
-auto button2 = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
+auto buttonMenuu = CCMenu::create();
+auto buttoon = CCSprite::createWithSpriteFrameName("GJ_deleteIcon_001.png");
+CCMenuItemSpriteExtra* menuu = CCMenuItemSpriteExtra::create(buttoon, buttoon, self, menu_selector(PauseLayer::toggleVisibility));
+menuu->setPosition({-20,-20});
+menuu->setScale(1.f);
+menuu->_setZOrder(100);
+buttonMenuu->setPosition({60, win_size.height - 30});
+buttonMenuu->addChild(menuu);
+if(hidePauseMenu) self->addChild(buttonMenuu);
+
+auto buttonMenu2 = CCMenu::create();
+auto button2 = CCSprite::create("GJ_violetMod_001.png");
 CCMenuItemSpriteExtra* menuBtn2 = CCMenuItemSpriteExtra::create(button2, button2, self, menu_selector(PauseLayer::onOpenMenu));
 menuBtn2->setPosition({-20,-20});
 menuBtn2->setScale(1.f);
@@ -1256,13 +2259,11 @@ buttonMenu2->addChild(menuBtn2);
 self->addChild(buttonMenu2);
 }
 
-void (*setBackgroundMusicTimeJNI)(float time);
-void setBackgroundMusicTimeJNI_H(float time) {
-seekBackgroundMusicTo(time * 1000);
-}
-
 void (*PlayLayer_levelComplete)(CCLayer*);
 void PlayLayer_levelComplete_H(CCLayer* self) {
+  CCDirector* director = CCDirector::sharedDirector();
+  CCScheduler* scheduler = director->getScheduler();
+  scheduler->setTimeScale(1.f);
   if (safeMode) callFunctionFromSymbol<void (*)(CCLayer*)>("_ZN9PlayLayer6onQuitEv")(self);
   else PlayLayer_levelComplete(self);
 }
@@ -1288,11 +2289,27 @@ cocos2d::CCPoint getCheckpointPosition(CCNode* checkpoint) {
 
 void (*PlayLayer_resetLevel)(PlayLayer*);
 void PlayLayer_resetLevel_H(PlayLayer* self) {
+musicVolume = CCUserDefault::sharedUserDefault()->getFloatForKey("musicVolume", 1.0f);
+auto gman = GameManager::sharedState();
+onToggleFlip(instantFlip);
+// if(MEMBER_BY_OFFSET(int, gman, 0x171)) CocosDenshion::SimpleAudioEngine::sharedEngine()->setBackgroundMusicVolume(musicVolume);
+CCDirector* director = CCDirector::sharedDirector();
+CCScheduler* scheduler = director->getScheduler();
+  if(noRespawnReset) {
+  scheduler->setTimeScale(1.0f);
+  noRespawnReset = false;
+}
+if(MEMBER_BY_OFFSET(bool, self, 0x29d) == false) CocosDenshion::SimpleAudioEngine::sharedEngine()->stopBackgroundMusic();
   PlayLayer_resetLevel(self);
+  clickTimestamps.clear();
   deaths = 0;
-  deathsLabel->setString("0 deaths");
+  clicks = 0;
   if(noclip || speedhack) safeMode = true;
   else safeMode = false;
+  PlayerObject* player = MEMBER_BY_OFFSET(PlayerObject*, self, 0x274);
+float seconds = player->getPosition().x / 311.58;
+  if(pmh && MEMBER_BY_OFFSET(int, self, 0x29d)) CocosDenshion::SimpleAudioEngine::sharedEngine()->setBackgroundMusicTime(seconds);
+  return;
 }
 /* cocos2d::CCLabelBMFont* percentage;
   percentage = nullptr;
@@ -1311,16 +2328,43 @@ void PlayLayer_resume_H(CCLayer* self) {
   PlayLayer_resume(self);
   if(noclip || speedhack) safeMode = true;
   extraLayerCreated = false;
-elc = false;
+  elc = false;
+  PlayerObject* player = MEMBER_BY_OFFSET(PlayerObject*, self, 0x274);
+float seconds = player->getPosition().x / 311.58;
+  if(pmh && MEMBER_BY_OFFSET(int, self, 0x29d)) CocosDenshion::SimpleAudioEngine::sharedEngine()->setBackgroundMusicTime(seconds);
     }
 
 cocos2d::CCLabelBMFont* noclipLabel;
-cocos2d::CCLabelBMFont* FPSLabel;
 cocos2d::CCLabelBMFont* percentageLabel;
 cocos2d::CCLabelBMFont* goldenPercentageLabel;
 void (*UILayer_init)(CCLayer*);
 void UILayer_init_H(CCLayer* self) {
   UILayer_init(self);
+  auto win_size = CCDirector::sharedDirector()->getWinSize();
+  if(fps_label) labelFPSDisplay = (char*)"0 FPS";
+  else labelFPSDisplay = (char*)"";
+  if(deaths_label) labelDeathsDisplay = (char*)"0 deaths";
+  else labelDeathsDisplay = (char*)"";
+  if(time_label) labelTimeDisplay = (char*)"00:00.000";
+  else labelTimeDisplay = (char*)"";
+  if(custom_label) labelCustomDisplay = (char*)"Custom";
+  else labelCustomDisplay = (char*)"";
+  if(speedhack_label) labelSpeedhackDisplay = (char*)"Speedhack";
+  else labelSpeedhackDisplay = (char*)"";
+  if(clicks_label) labelClicksDisplay = (char*)"0 clicks";
+  else labelClicksDisplay = (char*)"";
+  if(cps_label) labelCPSDisplay = (char*)"0 CPS";
+  else labelCPSDisplay = (char*)"";
+
+  labelInfo = CCLabelBMFont::create(
+            CCString::createWithFormat("%s\n%s\n%s\n%s\n%s\n%s\n%s", labelFPSDisplay.c_str(), labelDeathsDisplay.c_str(), labelTimeDisplay.c_str(), labelCustomDisplay.c_str(), labelSpeedhackDisplay.c_str(), labelClicksDisplay.c_str(), labelCPSDisplay.c_str())->getCString(), 
+            "chatFont.fnt"
+        );
+        labelInfo->setScale(0.5f);
+        labelInfo->setAnchorPoint({0.f, 0.5f});
+        labelInfo->setPosition(10, win_size.height - 60);
+        labelInfo->setOpacity(127);
+        self->addChild(labelInfo, 10000);
   noclipLabel = CCLabelBMFont::create(
             CCString::createWithFormat("Safe Mode")->getCString(), 
             "chatFont.fnt"
@@ -1330,16 +2374,6 @@ void UILayer_init_H(CCLayer* self) {
         noclipLabel->setPosition(10,10);
         noclipLabel->setColor(ccc3(255, 0, 0));
         self->addChild(noclipLabel, 10000);
-
-        auto win_size = CCDirector::sharedDirector()->getWinSize();
-        FPSLabel = CCLabelBMFont::create(
-            CCString::createWithFormat("FPS: 0")->getCString(), 
-            "chatFont.fnt"
-        );
-        FPSLabel->setScale(1.f);
-        FPSLabel->setAnchorPoint({0.f, 0.5f});
-        FPSLabel->setPosition(10,win_size.height - 10);
-        self->addChild(FPSLabel, 10000);
 
         percentageLabel = CCLabelBMFont::create(
             CCString::createWithFormat("0%")->getCString(), 
@@ -1357,28 +2391,21 @@ void UILayer_init_H(CCLayer* self) {
         goldenPercentageLabel->setAnchorPoint({0.f, 0.5f});
         self->addChild(goldenPercentageLabel, 10000);
 
-        deathsLabel = CCLabelBMFont::create(
-            CCString::createWithFormat("0 deaths")->getCString(), 
-            "chatFont.fnt"
-        );
-        deathsLabel->setScale(1.f);
-        deathsLabel->setAnchorPoint({0.f, 0.5f});
-        self->addChild(deathsLabel, 10000);
+        if(!safeMode) noclipLabel->setVisible(false);
+        else noclipLabel->setVisible(true);
+
+        if(noParticles) {
+          percentageLabel->setVisible(true);
+          percentageLabel->setString("0%");
+          GameManager* state = GameManager::sharedState();
+  if(MEMBER_BY_OFFSET(int, state, 0x1a5)) percentageLabel->setPosition(win_size.width - 190, win_size.height - 10);
+  else percentageLabel->setPosition(win_size.width / 2, win_size.height - 10);
+          goldenPercentageLabel->setVisible(false);
+        } else {
+          percentageLabel->setVisible(false);
+          goldenPercentageLabel->setVisible(false);
+        }
 }
-
-
-void (*SupportLayer_onEmail)(void*);
-  void SupportLayer_onEmail_H(void*) {
-    FLAlertLayer::create(
-            nullptr,
-            "Credits",
-            CCString::createWithFormat("<cy>AntiMatter (Unsimply)</c>: For making update 11, 12 and 13 possible\n<cg>Gastiblast</c>: Creating the Pokemon Series \n<cl>Nikolyas</c>: Massive help with update 10 \n<cp>elektrick</c>: Making the \"nano\" logo \n<cr>Misty</c>: Patching the particles for the purple coins\n\nYou: For playing!")->getCString(),
-            "OK",
-            nullptr,
-            600.f
-        )->show();
-        return;
-  }
 
 bool (*GameManager_isColorUnlocked)(GameManager*, int, bool);
 bool GameManager_isColorUnlocked_H(GameManager* self, int id, bool idk) {
@@ -1442,64 +2469,63 @@ void toggleGoldenPercentage(bool activate) {
 void (*PlayLayer_onUpdate)(PlayLayer* self, float dt);
 void PlayLayer_onUpdate_H(PlayLayer* self, float dt) { // typo
 PlayLayer_onUpdate(self, dt);
-auto normalPercentage = (int)MEMBER_BY_OFFSET(float, gjlvl, 0x170);
+auto m_player = MEMBER_BY_OFFSET(PlayerObject*, self, 0x274);
+CCLog("Y Acelleration: %.2f \n Gravity: %.2f \n Y Start: %.2f", MEMBER_BY_OFFSET(double, m_player, 0x3c0), MEMBER_BY_OFFSET(double, m_player, 0x3a0), MEMBER_BY_OFFSET(double, m_player, 0x398));
+if(!gjlvl || MEMBER_BY_OFFSET(float, self, 0x1dc) == 0 || !MEMBER_BY_OFFSET(PlayerObject*, self, 0x274)) return;
+auto normalPercentage = MEMBER_BY_OFFSET(int, gjlvl, 0x170);
 CCDirector* director = CCDirector::sharedDirector();
 CCScheduler* scheduler = director->getScheduler();
-if(speedhack) scheduler->setTimeScale(ExtraLayer::m_speedhack);
-else scheduler->setTimeScale(1.0f);
+if(speedhack) {
+  scheduler->setTimeScale(ExtraLayer::m_speedhack);
+  if(ExtraLayer::m_speedhackMusic) changeAllChannelsPitch(ExtraLayer::m_speedhack);
+}
 auto win_size = CCDirector::sharedDirector()->getWinSize();
 frameCount++;
-auto deaths = ExtraLayer::m_deaths;
-if(deaths) {
-  deathsLabel->setVisible(true);
-} else {
-  deathsLabel->setVisible(false);
-}
 cocos2d::CCUserDefault* ccdefault = cocos2d::CCUserDefault::sharedUserDefault();
 if(noclipLabel != nullptr) {
-    if(noclip) noclipLabel->setVisible(true);
+    if(safeMode) noclipLabel->setVisible(true);
     else noclipLabel->setVisible(false);
   }
   atts = MEMBER_BY_OFFSET(int, self, 0x2d8);
   jumps = MEMBER_BY_OFFSET(int, self, 0x2dc);
+  if(MEMBER_BY_OFFSET(CCLabelBMFont*, self, 0x1e4)) {
   if(hideatts) MEMBER_BY_OFFSET(CCLabelBMFont*, self, 0x1e4)->setVisible(false);
   else MEMBER_BY_OFFSET(CCLabelBMFont*, self, 0x1e4)->setVisible(true);
+  }
   extraLayerCreated = false;
 elc = false;
-if(fps) {
-  deathsLabel->setPosition(10,win_size.height - 30);
-  FPSLabel->setVisible(true);
   auto sharedCounter = FPSCounter::sharedCounter();
  accumulatedTime += dt;
        frames++;
         if (accumulatedTime >= 0.25f)
         {
             currentFPS = (float)frames / accumulatedTime;
-            FPSLabel->setString(cocos2d::CCString::createWithFormat("FPS: %i", (int)currentFPS)->getCString());
+            if(fps_label) labelFPSDisplay = formatWithChar("%i FPS\n", (int)currentFPS);
             frames = 0;
             accumulatedTime = 0.0f;
         }
-}
-else {
-  deathsLabel->setPosition(10,win_size.height - 10);
-  FPSLabel->setVisible(false);
-}
 if(ccdefault->getBoolForKey("noParticles", false) || noParticles) {
-  if(!percentageLabel->getParent() && percentageLabel != nullptr) self->addChild(percentageLabel, 10000);
-  percentageLabel->setVisible(true);
   PlayerObject* player = MEMBER_BY_OFFSET(PlayerObject*, self, 0x274);
     float percent = (player->getPosition().x / MEMBER_BY_OFFSET(float, self, 0x1dc)) * 100.0; // destroyplayer
     if(percent > 100) percent = 100;
     if(percent < 0) percent = 0;
     percent = floorf(percent);
-  percentageLabel->setString(CCString::createWithFormat("%i%%", (int)percent)->getCString());
-  goldenPercentageLabel->setString(CCString::createWithFormat("%i%%", (int)percent)->getCString());
+  std::string str = to_string((int)percent) + "%";
+if(percentageLabel) percentageLabel->setString(str.c_str());
+  if(goldenPercentageLabel) goldenPercentageLabel->setString(str.c_str());
   if((int)percent > normalPercentage && MEMBER_BY_OFFSET(int, self, 0x29d) == 0) toggleGoldenPercentage(true);
   else toggleGoldenPercentage(false);
   GameManager* state = GameManager::sharedState();
         if(MEMBER_BY_OFFSET(int, state, 0x1a5)) {
-          percentageLabel->setPosition(win_size.width - 190, win_size.height - 10); // progress bar
-          goldenPercentageLabel->setPosition(win_size.width - 190, win_size.height - 10); 
+        CCSprite* percentageBar = MEMBER_BY_OFFSET(CCSprite*, self, 0x214);
+        CCPoint barPos = percentageBar->getPosition();
+        CCSize barSize = percentageBar->getContentSize();
+        CCPoint anchor = percentageBar->getAnchorPoint();
+        float rightEdgeX = barPos.x + (barSize.width * (1.0f - anchor.x));
+        percentageLabel->setAnchorPoint(ccp(0, 0.5f)); 
+
+          percentageLabel->setPosition(ccp(rightEdgeX + 5, barPos.y));
+          goldenPercentageLabel->setPosition(ccp(rightEdgeX + 5, barPos.y)); 
         }
         else {
           percentageLabel->setPosition(win_size.width / 2, win_size.height - 10);
@@ -1509,26 +2535,71 @@ if(ccdefault->getBoolForKey("noParticles", false) || noParticles) {
   percentageLabel->setVisible(false);
   goldenPercentageLabel->setVisible(false);
 }
+if(deaths_label) labelDeathsDisplay = formatWithChar("%i deaths\n", deaths);
+int totalSeconds = MEMBER_BY_OFFSET(float, self, 0x2e4);
+int h = static_cast<int>(totalSeconds) / 3600;
+int m = (static_cast<int>(totalSeconds) % 3600) / 60;
+int s = static_cast<int>(totalSeconds) % 60;
+if(time_label) labelTimeDisplay = formatWithChar("%02d:%02d:%02d\n", h, m, s);
+if(custom_label) labelCustomDisplay = formatWithChar("%s\n", ExtraLayer::m_customLabelValue.c_str());
+if(speedhack_label && speedhack) labelSpeedhackDisplay = formatWithChar("Speedhack: %.2fx\n", ExtraLayer::m_speedhack);
+else if(speedhack_label && !speedhack) labelSpeedhackDisplay = (char*)"No Speedhack\n";
+if(clicks_label) labelClicksDisplay = formatWithChar("%i clicks\n", clicks);
+while (!clickTimestamps.empty() && clickTimestamps.front() < (totalSeconds - 1.0f)) {
+    clickTimestamps.erase(clickTimestamps.begin());
+}
+float cps = static_cast<float>(clickTimestamps.size());
+if(cps_label) labelCPSDisplay = formatWithChar("%i CPS\n", static_cast<int>(cps));
+labelInfo->setString(CCString::createWithFormat("%s%s%s%s%s%s%s", labelFPSDisplay.c_str(), labelDeathsDisplay.c_str(), labelTimeDisplay.c_str(), labelCustomDisplay.c_str(), labelSpeedhackDisplay.c_str(), labelClicksDisplay.c_str(), labelCPSDisplay.c_str())->getCString());
 }
 
-void (*LevelSettingsLayer_init)(CCLayer*, LevelSettingsObject*);
-void LevelSettingsLayer_init_H(CCLayer* self, LevelSettingsObject* obj) {
-  LevelSettingsLayer_init(self, obj);
-/*
-  auto buttonMenu = CCMenu::create();
-auto win_size = CCDirector::sharedDirector()->getWinSize();
-auto button = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
-CCMenuItemSpriteExtra* menuBtn = CCMenuItemSpriteExtra::create(button, button, self, menu_selector(MenuLayer::onOptions));
-menuBtn->setPosition({-20,-20});
-menuBtn->setScale(1.f);
-buttonMenu->setPosition({win_size.width, win_size.height});
-buttonMenu->addChild(menuBtn);
-self->addChild(buttonMenu); */
+void fuck() {
+  return;
+}
+
+CCMenu* createSpriteButtonWithFunction(CCSprite* sprite, CCPoint position, cocos2d::SEL_MenuHandler selector, CCLayer* layer) {
+CCMenuItemSpriteExtra* menuBtn = CCMenuItemSpriteExtra::create(sprite, sprite, layer, selector);
+auto buttonMenu = CCMenu::create(menuBtn, NULL);
+buttonMenu->setAnchorPoint(CCPointZero);
+buttonMenu->setPosition(CCPointZero);
+buttonMenu->setPosition(position);
+return buttonMenu;
+}
+
+CCMenu* createSpriteFrameNameButtonWithFunctionAndSpriteName(const char* spriteName, CCPoint position, cocos2d::SEL_MenuHandler selector, CCLayer* layer) {
+CCMenuItemSpriteExtra* menuBtn = CCMenuItemSpriteExtra::create(CCSprite::createWithSpriteFrameName(spriteName), CCSprite::createWithSpriteFrameName(spriteName), layer, selector);
+auto buttonMenu = CCMenu::create(menuBtn, NULL);
+buttonMenu->setAnchorPoint(CCPointZero);
+buttonMenu->setPosition(CCPointZero);
+buttonMenu->setPosition(position);
+return buttonMenu;
+}
+
+void LevelSettingsLayer::onCustomSongs(CCObject* pSender) {
+  auto btn = static_cast<CCMenuItemSpriteExtra*>(pSender);
+  auto lso = reinterpret_cast<LevelSettingsObject*>(btn->getUserData());
+  auto song = CustomSongLayer::create(this, lso);
+  this->onClose();
+  ExtraLayer::m_lel->addChild(song);
+}
+
+int (*LevelSettingsLayer_init)(CCLayer* self, LevelSettingsObject* obj);
+int LevelSettingsLayer_init_H(CCLayer* self, LevelSettingsObject* obj) {
+LevelSettingsLayer_init(self, obj);
+CCLayer* container = MEMBER_BY_OFFSET(CCLayer*, self, 0x1c8);
+CCMenu* menuContainer = MEMBER_BY_OFFSET(CCMenu*, self, 0x1b0);
+CCMenuItemSpriteExtra* menuBtn = CCMenuItemSpriteExtra::create(CCSprite::create("GJ_musicOnBtn_001.png"), CCSprite::create("GJ_musicOnBtn_001.png"), self, menu_selector(LevelSettingsLayer::onCustomSongs));
+CCPoint pos = CCPointMake((CCDirector::sharedDirector()->getWinSize().width / 2) - menuBtn->getContentSize().width - 5, (CCDirector::sharedDirector()->getWinSize().height / 2) - menuBtn->getContentSize().height - 5);
+menuBtn->setUserData(obj); 
+// menuBtn->setPosition(pos);
+menuContainer->addChild(menuBtn, 100000); 
+return 1;
 }
 
 void (*CreatorLayer_init)(CCLayer*);
 void CreatorLayer_init_H(CCLayer* self) {
   CreatorLayer_init(self);
+  if(hideVault) return;
   CCArray* children = self->getChildren();
 
     std::vector<CCNode*> labelsToRemove;
@@ -1559,49 +2630,22 @@ void CreatorLayer_init_H(CCLayer* self) {
     backgroundSprite->setColor(ccc3(87, 87, 255));
 
 
-  auto buttonMenu = CCMenu::create();
+auto buttonMenu = CCMenu::create();
 auto win_size = CCDirector::sharedDirector()->getWinSize();
 bool closed = CoderLayer::checkIfTheDoorInCreateLayerInitIsClosedOrNot();
-if(!closed) { auto button = CCSprite::create("secretDoor_open.png");
-  CCMenuItemSpriteExtra* menuBtn = CCMenuItemSpriteExtra::create(button, button, self, menu_selector(CreatorLayer::onSecret));
-menuBtn->setPosition({0,0});
-menuBtn->setScale(0.5f);
-menuBtn->_setZOrder(100);
-int maxZ = -9999;
-    CCArray* children = self->getChildren();
-    for (unsigned int i = 0; i < children->count(); i++) {
-        CCNode* node = (CCNode*)children->objectAtIndex(i);
-        if (node->getZOrder() > maxZ) {
-            maxZ = node->getZOrder();
-        }
-    }
-
-    self->reorderChild(menuBtn, maxZ + 1);
-buttonMenu->setPosition({win_size.width - 20, 20});
-buttonMenu->addChild(menuBtn, 99999);
+if(!closed) { 
+  auto button = CCSprite::create("secretDoor_open.png");
+  button->setPosition(CCPointMake(win_size.width - 20, 20));
+  auto buttonMenu = createSpriteButtonWithFunction(button, button->getPosition(), menu_selector(CreatorLayer::onSecret), self);
+  buttonMenu->setScale(0.5f);
 self->addChild(buttonMenu);
 }
 else {
   auto button = CCSprite::create("secretDoor_closed.png");
-  CCMenuItemSpriteExtra* menuBtn = CCMenuItemSpriteExtra::create(button, button, self, menu_selector(CreatorLayer::onSecret));
-menuBtn->setPosition({0,0});
-menuBtn->setScale(0.5f);
-menuBtn->_setZOrder(100);
-buttonMenu->setPosition({win_size.width - 20, 20});
-buttonMenu->addChild(menuBtn, 99999);
+  button->setPosition(CCPointMake(win_size.width - 20, 20));
+  auto buttonMenu = createSpriteButtonWithFunction(button, button->getPosition(), menu_selector(CreatorLayer::onSecret), self);
+  buttonMenu->setScale(0.5f);
 self->addChild(buttonMenu);
-
-int maxZ = -9999;
-    CCArray* children = self->getChildren();
-    for (unsigned int i = 0; i < children->count(); i++) {
-        CCNode* node = (CCNode*)children->objectAtIndex(i);
-        if (node->getZOrder() > maxZ) {
-            maxZ = node->getZOrder();
-        }
-    }
-
-    self->reorderChild(menuBtn, maxZ + 1);
-
 }
 }
 
@@ -1612,7 +2656,8 @@ added = false;
 extraLayerCreated = false;
 elc = false;
 deaths = 0;
-deathsLabel->setString("0 deaths");
+clicks = 0;
+clickTimestamps.clear();
 CCDirector::sharedDirector()->setDisplayStats(false);
 }
 
@@ -1663,7 +2708,13 @@ char* LoadingLayer_getLoadingString_H(void*) {
       "Getting 82\% on allegiance",
       "Getting GDPS of the Month...",
       "Sorry guys, i dropped my purple paint onto the coins, hope it doesn't bother... .. .",
-      "I need the fire extinguisher for the chicken!"
+      "I need the fire extinguisher for the chicken!",
+      "A Fantasy of Chaoz!",
+      "Life is bad if you only focus on the deaths you have.",
+      "Custom Songs!",
+      "RobTop is love, RobTop is life.",
+      "Roses are red, violets are blue, this GDPS is great. Fuck, it doesn't rhyme.",
+      "You have been dinde"
 };
     return const_cast<char*>(randArr[random_array_index(randArr)]);
 }
@@ -1692,7 +2743,12 @@ return;
 int (*PlayLayer_init)(CCLayer*, GJGameLevel*);
 int PlayLayer_init_H(CCLayer* self, GJGameLevel* lvl) {
   PlayLayer_init(self, lvl);
+  HidePauseLayer::m_playLayer = self;
+  if(hideatts) MEMBER_BY_OFFSET(CCLabelBMFont*, self, 0x1e4)->setVisible(false);
+  else MEMBER_BY_OFFSET(CCLabelBMFont*, self, 0x1e4)->setVisible(true);
   gjlvl = lvl;
+  if(!percentageLabel->getParent() && percentageLabel != nullptr) MEMBER_BY_OFFSET(CCLayer*, self, 0x270)->addChild(percentageLabel, 10000);
+  if(!goldenPercentageLabel->getParent() && goldenPercentageLabel != nullptr) MEMBER_BY_OFFSET(CCLayer*, self, 0x270)->addChild(goldenPercentageLabel, 10000);
   return 1;
 }
 
@@ -1715,19 +2771,16 @@ sharedEngine->playBackgroundMusic(audiotitlestd,true);
 return;
 }
 
-void (*EditLevelLayer_init)(CCLayer* self, GJGameLevel* lvl);
-void EditLevelLayer_init_H(CCLayer* self, GJGameLevel* lvl) {
-EditLevelLayer_init(self, lvl);
-/* auto buttonMenu = CCMenu::create();
-auto win_size = CCDirector::sharedDirector()->getWinSize();
-auto button = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
-CCMenuItemSpriteExtra* menuBtn = CCMenuItemSpriteExtra::create(button, button, self, menu_selector(ToggleHack::showLevelInfo));
-menuBtn->setPosition({-20,-20});
-menuBtn->setScale(1.f);
-menuBtn->_setZOrder(100);
-buttonMenu->setPosition({50, win_size.height / 2});
-buttonMenu->addChild(menuBtn);
-self->addChild(buttonMenu); */
+void MenuLayer::onOpenMenu() {
+  this->setTouchEnabled(false);
+    extra = ExtraLayer::create(this);
+    this->addChild(extra, 1000);
+}
+
+void EditLevelLayer::onOpenMenu() {
+  this->setTouchEnabled(false);
+    extra = ExtraLayer::create(this);
+    this->addChild(extra, 1000);
 }
 
 void (*OptionsLayer_onRate)(void);
@@ -1792,22 +2845,118 @@ void EditorUI::deleteAll() {
         }
     }
     for (GameObject* obj : objectsToDelete) {
+        obj->stopAllActions();
+        obj->unscheduleAllSelectors();
         editLayer->removeObject(obj);
     }
     // this->deselectAll(); 
     this->toggleDuplicateButton();
 }
 
+LevelEditorLayer* getEditorLayer(EditorUI* ui) {
+    return MEMBER_BY_OFFSET(LevelEditorLayer*, ui, 0x1d0);
+}
+
+bool (*EditorUI_ccTouchBegan)(CCTouch*, CCEvent*);
+bool EditorUI_ccTouchBegan_H(CCTouch* touch, CCEvent* event) {
+    if(!PlaytestLayer::get() && PlaytestLayer::get() == nullptr) {
+        EditorUI_ccTouchBegan(touch, event);
+        return true;
+    }
+    onTogglePlayerObject(true);
+    PlaytestLayer::get()->m_jumping = true;
+    // g_player->pushButton(PlayerButton::Button1);
+    return true;
+}
+
+void (*EditorUI_ccTouchEnded)(CCTouch*, CCEvent*);
+void EditorUI_ccTouchEnded_H(CCTouch* touch, CCEvent* event) {
+    EditorUI_ccTouchEnded(touch, event);
+    if(!PlaytestLayer::get() && PlaytestLayer::get() == nullptr) return;
+    PlaytestLayer::get()->m_jumping = false;
+    g_player->releaseButton(PlayerButton::Button1);
+}
+
+
+void EditorUI::playtest(CCObject*) {
+    auto m_manager = GameManager::sharedState();
+    auto playerFrame = MEMBER_BY_OFFSET(int, m_manager, 0x1e0); // GameManager::getPlayerFrame
+    auto playerShip = MEMBER_BY_OFFSET(int, m_manager, 0x1e8); // GameManager::getPlayerShip
+    g_player = PlayerObject::create(playerFrame, playerShip, MEMBER_BY_OFFSET(LevelEditorLayer*, this, 0x1d0));
+    g_player->setPosition(ccp(0, 105));
+    MEMBER_BY_OFFSET(CCNode*, getEditorLayer(this), 0x158)->addChild(g_player);
+    MEMBER_BY_OFFSET(double, g_player, 0x3c0) = 0;
+    CCLog("[VIOLETPS] Player Pos: %.1f, %.1f", g_player->getPositionY(), g_player->getPositionX());
+    auto playtest = PlaytestLayer::create(this, g_player);
+    this->addChild(playtest);
+}
+
+void EditorUI::onPlay(CCObject*) {
+auto lel = MEMBER_BY_OFFSET(CCLayer*, this, 0x1d0);
+auto grid = MEMBER_BY_OFFSET(DrawGridLayer*, lel, 0x154);
+g_gameLayer = MEMBER_BY_OFFSET(CCNode*, lel, 0x158);
+g_lineX = g_gameLayer->convertToNodeSpace(CCPointZero).x;
+if(g_lineX < lel->convertToNodeSpace(CCPointZero).x) g_lineX = 0.0f;
+g_playback = true;
+auto lvl = MEMBER_BY_OFFSET(GJGameLevel*, lel, 0x15c);
+auto audioTrack = MEMBER_BY_OFFSET(int, lvl, 0x148);
+CocosDenshion::SimpleAudioEngine::sharedEngine()->playBackgroundMusic(LevelTools_getAudioFilename_H(audioTrack));
+CocosDenshion::SimpleAudioEngine::sharedEngine()->setBackgroundMusicTime((g_lineX < 0) ? 0 : g_lineX / 311.58f);
+
+g_playBtn->setVisible(false);
+g_playBtn->setEnabled(false);
+
+g_stopBtn->setVisible(true);
+g_stopBtn->setEnabled(true);
+}
+
+void EditorUI::stopMusic(CCObject*) {
+g_playback = false;
+CocosDenshion::SimpleAudioEngine::sharedEngine()->pauseBackgroundMusic();
+g_playBtn->setVisible(true);
+g_playBtn->setEnabled(true);
+
+g_stopBtn->setVisible(false);
+g_stopBtn->setEnabled(false);
+}
 
 CCMenuItemSpriteExtra* menuDeleteAll = nullptr;
 void (*EditorUI_setupDeleteMenu)(CCLayer* self);
 void EditorUI_setupDeleteMenu_H(CCLayer* self) {
   EditorUI_setupDeleteMenu(self);
-  auto buttonMenu = CCMenu::create();
-auto win_size = CCDirector::sharedDirector()->getWinSize();
-auto button = CCSprite::create("deleteAll_001.png");
+  auto win_size = CCDirector::sharedDirector()->getWinSize();
 
+  if(playback) {
+    auto spr = CCSprite::create("GJ_playMusicBtn_001.png");
+    auto btn = CCMenuItemSpriteExtra::create(spr, spr, self, menu_selector(EditorUI::onPlay));
+    g_playBtn = btn;
+    btn->setPosition({30, win_size.height / 1.5f});
+    auto menu = CCMenu::create(btn, NULL);
+    menu->setPosition(CCPointZero);
+    self->addChild(menu);
+
+    spr = CCSprite::create("GJ_stopMusicBtn_001.png");
+    btn = CCMenuItemSpriteExtra::create(spr, spr, self, menu_selector(EditorUI::stopMusic));
+    btn->setVisible(false);
+    btn->setEnabled(false);
+    g_stopBtn = btn;
+    btn->setPosition({30, win_size.height / 1.5f});
+    menu = CCMenu::create(btn, NULL);
+    menu->setPosition(CCPointZero);
+    self->addChild(menu);
+    }
+
+    auto spr = CCSprite::create("GJ_playEditorBtn_001.png");
+    auto btn = CCMenuItemSpriteExtra::create(spr, spr, self, menu_selector(EditorUI::playtest));
+    btn->setPosition({30, win_size.height / 1.5f - 85});
+    auto menu = CCMenu::create(btn, NULL);
+    menu->setPosition(CCPointZero);
+    self->addChild(menu);
+
+auto buttonMenu = CCMenu::create();
+auto button = CCSprite::create("deleteAll_001.png");
 if(!button || button == nullptr) return;
+if(deleteAll) {
 menuDeleteAll = CCMenuItemSpriteExtra::create(button, button, self, menu_selector(EditorUI::deleteAll));
 menuDeleteAll->setPosition({0,0});
 menuDeleteAll->setScale(1.f);
@@ -1818,6 +2967,7 @@ CCPoint point = CCPointMake(win_size.width - 100, win_size.height / 5);
 buttonMenu->setPosition(point);
 label->setPosition(point);
 buttonMenu->addChild(menuDeleteAll);
+      }
 // self->addChild(label);
 if(filterOption) {
 auto toggleOffSprite2 = CCSprite::create("GJ_filterBtn_002.png");
@@ -1829,7 +2979,7 @@ auto itemOn2  = CCMenuItemSprite::create(toggleOnSprite2,  toggleOnSprite2,  nul
     getMenuToggleSprite(itemOn2, itemOff2, filter),
     getMenuToggleSprite(itemOff2, itemOn2, filter),  
     self,
-    menu_selector(EditorUI::setFilterType) 
+    menu_selector(EditorUI::toggleFilter) 
 );
 menuFilter->setPosition({0,0});
 menuFilter->setScale(1.f);
@@ -1843,6 +2993,7 @@ self->addChild(buttonMenu, 100);
 void (*EditorUI_toggleMode)(CCLayer* self, CCNode* param);
 void EditorUI_toggleMode_H(CCLayer* self, CCNode* param) {
     EditorUI_toggleMode(self, param);
+    if(!deleteAll) return;
   auto type = MEMBER_BY_OFFSET(int, self, 0x1cc);
   if(type != 1 && menuDeleteAll != nullptr) {
     menuDeleteAll->removeFromParentAndCleanup(true);
@@ -1860,14 +3011,14 @@ self->addChild(buttonMenu, 100);
 }
 
 
-void* G_TARGET_FILTER_TYPE_ID = nullptr; 
+void* TARGET_OBJ = nullptr; 
 
-void EditorUI::setFilterType() {
+void EditorUI::toggleFilter() {
   CCArray* selected = MEMBER_BY_OFFSET(CCArray*, this, 0x180);
 
   if(filter) {
     filter = false;
-    G_TARGET_FILTER_TYPE_ID = nullptr;
+    TARGET_OBJ = nullptr;
     return;
   } else filter = true;
     
@@ -1875,40 +3026,50 @@ void EditorUI::setFilterType() {
         return;
     }
 
-    GameObject* definingObject = nullptr;
+    GameObject* defObject = nullptr;
     if (selected->count() > 0) {
         return;
     } else {
-       definingObject = MEMBER_BY_OFFSET(GameObject*, this, 0x254);
+       defObject = MEMBER_BY_OFFSET(GameObject*, this, 0x254);
     }
-    if (definingObject) {
-        G_TARGET_FILTER_TYPE_ID = MEMBER_BY_OFFSET(void*, definingObject, 0x32c);
+    if (defObject) {
+        TARGET_OBJ = MEMBER_BY_OFFSET(void*, defObject, 0x32c);
     } else {
-        G_TARGET_FILTER_TYPE_ID = nullptr;
+        TARGET_OBJ = nullptr;
     }
 }
 
 
 CCArray* (*LevelEditorLayer_objectsInRect)(float, float, int, CCRect*);
 CCArray* LevelEditorLayer_objectsInRect_H(float param_1, float param_2, int param_3, CCRect* param_4) {
-    CCArray* allObjectsInRect = LevelEditorLayer_objectsInRect(param_1, param_2, param_3, param_4);
-    if (G_TARGET_FILTER_TYPE_ID == nullptr) {
-        return allObjectsInRect;
+    CCArray* sel = LevelEditorLayer_objectsInRect(param_1, param_2, param_3, param_4);
+    if (TARGET_OBJ == nullptr) {
+        return sel;
     }
-    CCArray* filteredArray = CCArray::create(); 
-    for (int i = 0; i < allObjectsInRect->count(); i++) {
-        GameObject* currObj = static_cast<GameObject*>(allObjectsInRect->objectAtIndex(i));
-        if (currObj == nullptr) continue;
-        auto* currObjMember = MEMBER_BY_OFFSET(void*, currObj, 0x32c);
-        if (currObjMember == G_TARGET_FILTER_TYPE_ID) {
-            filteredArray->addObject(currObj);
+    CCArray* array = CCArray::create(); 
+    for (int i = 0; i < sel->count(); i++) {
+        GameObject* obj = static_cast<GameObject*>(sel->objectAtIndex(i));
+        if (obj == nullptr) continue;
+        auto* objMember = MEMBER_BY_OFFSET(void*, obj, 0x32c);
+        if (objMember == TARGET_OBJ) {
+            array->addObject(obj);
         }
     }
-    return filteredArray;
+    return array;
 }
 int (*EditorPauseLayer_init)(CCLayer* self, CCLayer* editor);
 int EditorPauseLayer_init_H(CCLayer* self, CCLayer* editor) {
   EditorPauseLayer_init(self, editor);
+  onTogglePlayerObject(false);
+  if(playback) {
+    g_playback = false;
+    CocosDenshion::SimpleAudioEngine::sharedEngine()->pauseBackgroundMusic();
+    g_playBtn->setVisible(true);
+    g_playBtn->setEnabled(true);
+
+    g_stopBtn->setVisible(false);
+    g_stopBtn->setEnabled(false);
+  }
   CCArray* children = self->getChildren();
     std::vector<CCNode*> labelsToRemove;
     CCObject* child;
@@ -1928,8 +3089,9 @@ int EditorPauseLayer_init_H(CCLayer* self, CCLayer* editor) {
   objLabel->setPosition({10, win_size.height - 5});
   objLabel->setScale(0.5f);
   self->addChild(objLabel);
+  if(!levelLength) return 1;
 
-  int editorDistance = floorf((MEMBER_BY_OFFSET(int, editor, 0x164) / 311.0) + 1);
+  int editorDistance = floorf((MEMBER_BY_OFFSET(int, editor, 0x164) / 311.0));
   int minutes = editorDistance / 60;
   int seconds = editorDistance % 60;
   CCString* distText = nullptr;
@@ -1946,36 +3108,7 @@ int EditorPauseLayer_init_H(CCLayer* self, CCLayer* editor) {
   distLabel->setPosition({10, win_size.height - 20});
   distLabel->setScale(0.5f);
   self->addChild(distLabel);
-  auto toggleOffSprite3 = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
-  auto toggleOnSprite3 = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
-  auto itemOff3 = CCMenuItemSprite::create(toggleOffSprite3, toggleOffSprite3, nullptr, nullptr);
-auto itemOn3  = CCMenuItemSprite::create(toggleOnSprite3,  toggleOnSprite3,  nullptr, nullptr);
 
-  auto PMHButton = CCMenuItemToggler::create(
-    getMenuToggleSprite(itemOn3, itemOff3, filterOption),
-    getMenuToggleSprite(itemOff3, itemOn3, filterOption),  
-    self, 
-    menu_selector(ToggleHack::sf) 
-);
-
-  auto menu3 = CCMenu::create();
-   auto counterLabel3 = CCLabelBMFont::create(
-            CCString::createWithFormat("Select Filter")->getCString(), 
-            "bigFont.fnt"
-        );
-        counterLabel3->setScale(0.5f);
-        auto labelMenuItem3 = CCMenuItemLabel::create(
-    counterLabel3, 
-    self, 
-    menu_selector(ExtraLayer::showSF) 
-);
-  PMHButton->setScale(0.8f);
-  menu3->addChild(PMHButton);
-  menu3->addChild(labelMenuItem3);
-  menu3->setPosition({150, 25});
-
-  menu3->alignItemsHorizontally();
-  self->addChild(menu3);
   cocos2d::CCUserDefault *def = cocos2d::CCUserDefault::sharedUserDefault();
     
     def->setBoolForKey("filterOption", filterOption);
@@ -2030,22 +3163,17 @@ void EditorUI_showMaxError_H() {
 void (*OptionsLayer_customSetup)(OptionsLayer* self);
 void OptionsLayer_customSetup_H(OptionsLayer* self) {
 OptionsLayer_customSetup(self);
+return;
 auto win_size = CCDirector::sharedDirector()->getWinSize();
-  auto toggleOff = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
-  auto toggleOn = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
-  auto button = CCMenuItemToggler::create(
-    getToggleSprite(toggleOn, toggleOff, iconHack),
-    getToggleSprite(toggleOff, toggleOn, iconHack),
-    self,
-    menu_selector(ToggleHack::iconHackF)
-  );
-  auto menu = CCMenu::create();
-  menu->addChild(button);
-  menu->setPosition(20, win_size.height / 2);
-  menu->setScale(0.85f);
-  button->setPosition(0,0);
-  
-  self->addChild(menu);
+auto buttonMenu2 = CCMenu::create();
+auto button2 = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
+CCMenuItemSpriteExtra* menuBtn2 = CCMenuItemSpriteExtra::create(button2, button2, self, menu_selector(OptionsLayer::onOpenMenu));
+buttonMenu2->setPosition(CCPointZero);
+menuBtn2->setPosition({win_size.width, win_size.height});
+buttonMenu2->addChild(menuBtn2);
+buttonMenu2->setScale(0.5f);
+buttonMenu2->setPosition(25, 10);
+self->addChild(buttonMenu2, 100);
 }
 
 EditorUI* EditorUI::create() {
@@ -2094,8 +3222,1147 @@ unsigned int index = 0;
 }
 }
 
+struct LegacyString {
+    struct Metadata {
+        int capacity;
+        int length;
+        int refCount;
+    };
+    char* data;
+};
+
+// helper to create a string in the format the game expects
+void* to_fake_str(const char* text) {
+    size_t len = strlen(text);
+    auto* totalBuffer = (uint8_t*)malloc(12 + len + 1);
+
+    int* meta = (int*)totalBuffer;
+    meta[0] = len;
+    meta[1] = len;
+    meta[2] = -1;
+    
+    char* dataPtr = (char*)(totalBuffer + 12);
+    strcpy(dataPtr, text);
+    
+    return dataPtr;
+}
+
+// This is the common layout for libstdc++ gnustl strings in older games
+struct GameString {
+    char* data; // Pointer to the char buffer
+};
+
+void set_string_universal(uintptr_t baseObj, uintptr_t offset, const char* text) {
+    if (!baseObj) return;
+    size_t len = strlen(text);
+    uint8_t* buf = (uint8_t*)malloc(len + 13); 
+    *(int*)(buf) = len;
+    *(int*)(buf + 4) = len;
+    *(int*)(buf + 8) = -1;
+    char* dataPtr = (char*)(buf + 12);
+    memcpy(dataPtr, text, len + 1);
+    *(char**)(baseObj + offset) = dataPtr;
+}
+
+typedef void* (*tStringCtor)(void* strObj, const char* text, void* allocator);
+tStringCtor stringCtor = (tStringCtor)0x2c5dc0;
+
+void set_string_safe(uintptr_t baseObj, uintptr_t offset, const char* text) {
+    void* strPtr = (void*)(baseObj + offset);
+    
+    // 1. Prepare a clean "dummy" allocator object
+    // In 32-bit ARM, this is usually 4 bytes.
+    uint32_t dummyAlloc = 0; 
+
+    // 2. IMPORTANT: Zero the destination string memory first.
+    // If there was an old pointer there, we must clear it so the 
+    // constructor doesn't think it needs to 'reallocate' something.
+    memset(strPtr, 0, 12); // std::string is typically 12 bytes in 32-bit
+
+    // 3. Call constructor with the text AND the clean allocator
+    stringCtor(strPtr, text, &dummyAlloc);
+}
+
+
+
+
+GJGameLevel* (*levelTools_getLevel)(int level);
+GJGameLevel* levelTools_getLevel_H(int level) {
+  if(level != 15) return levelTools_getLevel(level);
+  auto lvl = levelTools_getLevel(6);
+  /*
+  std::string* levelString = new std::string("kS1,40,kS2,125,kS3,255,kS4,0,kS5,102,kS6,255,kA1,10;");
+  MEMBER_BY_OFFSET(std::string*, lvl, 0x134) = levelString;
+
+   std::string* levelName = new std::string("test");
+  MEMBER_BY_OFFSET(std::string, lvl, 0x12c) = CCString::create("test")->m_sString; */
+
+/* auto setLevelName = reinterpret_cast<void(__thiscall*)(GJGameLevel*, std::string)>(
+    *(uintptr_t*)(*(uintptr_t*)lvl + 0x134)
+  );
+  setLevelName(lvl, "test"); 
+
+  lvl->setLevelName("test");
+  lvl->setLevelString("S1,40,kS2,125,kS3,255,kS4,0,kS5,102,kS6,255,kA1,10;");
+  */
+ /*
+    intptr_t vtable = *reinterpret_cast<uintptr_t*>(lvl);
+    using setLevelName_t = void(*)(void*, std::string);
+    setLevelName_t setLevelName = *reinterpret_cast<setLevelName_t*>(vtable + 0x134);
+    using setLevelString_t = void(*)(void*, std::string);
+    setLevelString_t setLevelString = *reinterpret_cast<setLevelString_t*>(vtable + 0x144);
+    
+    setLevelName(lvl, LEVELNAME_1);
+    setLevelString(lvl, LEVELSTRING_1); */
+    /*
+    void* fakeStringData = to_fake_str(LEVELNAME_1);
+    void* fakeStringData2 = to_fake_str(LEVELSTRING_1);
+    *reinterpret_cast<void**>(reinterpret_cast<uintptr_t>(lvl) + 0x12c) = fakeStringData;
+    *reinterpret_cast<void**>(reinterpret_cast<uintptr_t>(lvl) + 0x134) = fakeStringData2;
+    */
+    /* void* lvlPtr = &MEMBER_BY_OFFSET(std::string, lvl, 0x12c);
+    void* lvlStrPtr = &MEMBER_BY_OFFSET(std::string, lvl, 0x134);
+    new (lvlPtr) std::string(LEVELNAME_1);
+    new (lvlStrPtr) std::string(LEVELSTRING_1); */
+
+    /* std::string sourceStr = cocos2d::CCString::create(LEVELNAME_1)->m_sString;
+    void* destAddr = (void*)((uintptr_t)lvl + 0x12c);
+    memcpy(destAddr, &sourceStr, sizeof(std::string)); */
+
+    /* char* gameStrBuffer = (char*)((uintptr_t)lvl + 0x12c + 12); // +12 for gnustl header
+    strncpy(gameStrBuffer, LEVELNAME_1, 20);
+
+    char* gameStrBuffer2 = (char*)((uintptr_t)lvl + 0x134 + 12); // +12 for gnustl header
+    strncpy(gameStrBuffer2, LEVELSTRING_1, 20); */
+
+    /* std::string sourceStr2 = cocos2d::CCString::create(LEVELSTRING_1)->m_sString;
+    void* destAddr2 = (void*)((uintptr_t)lvl + 0x134);
+    memcpy(destAddr2, &sourceStr2, sizeof(std::string)); */
+
+    // MEMBER_BY_OFFSET(std::string, lvl, 0x12c) = CCString::create(LEVELNAME_1)->m_sString;
+    // MEMBER_BY_OFFSET(std::string, lvl, 0x134) = CCString::create(LEVELSTRING_1)->m_sString;
+
+    set_string_safe((uintptr_t)lvl, 0x12c, LEVELNAME_1);
+    set_string_safe((uintptr_t)lvl, 0x134, LEVELSTRING_1);
+
+  MEMBER_BY_OFFSET(int, lvl, 0x148) = 25;
+  lvl->setDifficulty(lvl, 4);
+  MEMBER_BY_OFFSET(int, lvl, 0x18c) = 12;
+  MEMBER_BY_OFFSET(int, lvl, 0x128) = 15;
+  MEMBER_BY_OFFSET(int, lvl, 0x1e0) = 1;
+  MEMBER_BY_OFFSET(int, lvl, 0x194) = 3;
+  MEMBER_BY_OFFSET(int, lvl, 0x1b0) = 0;
+  return lvl;
+}
+
+std::vector<uint8_t> uintptrToBytes(uintptr_t value) {
+    std::vector<uint8_t> bytes(sizeof(uintptr_t));
+
+    for (size_t i = 0; i < bytes.size(); ++i) {
+        bytes[i] = static_cast<uint8_t>((value >> (8 * i)) & 0xFF);
+    }
+
+    return bytes;
+}
+
+void LevelEditorLayer_update(LevelEditorLayer* self, float dt) {
+    CCRect visible_rect;
+    
+    auto vr_origin = MEMBER_BY_OFFSET(cocos2d::CCLayer*, self, 0x158)->convertToNodeSpace(CCPoint(0,0));
+    auto vr_dest = CCDirector::sharedDirector()->getWinSize();
+    
+    visible_rect.origin = vr_origin;
+    visible_rect.size = vr_dest;
+    
+    // handle zooming
+    visible_rect.size.width *= 1 / MEMBER_BY_OFFSET(cocos2d::CCLayer*, self, 0x158)->getScale();
+    visible_rect.size.height *= 1 / MEMBER_BY_OFFSET(cocos2d::CCLayer*, self, 0x158)->getScale();
+
+    // fix blocks disappearing where it shouldn't by extending the visible rect by a few blocks
+    visible_rect.origin.x -= 75;
+    visible_rect.origin.y -= 75;
+    
+    visible_rect.size.width += 150;
+    visible_rect.size.height += 150;
+
+    auto bn = MEMBER_BY_OFFSET(CCSpriteBatchNode*, self, 0x140);
+
+    for (uint32_t section_id = 0; section_id < MEMBER_BY_OFFSET(CCArray*, self, 0x144)->count(); section_id++) {
+        CCArray* section_objects = static_cast<CCArray*>(MEMBER_BY_OFFSET(CCArray*, self, 0x144)->objectAtIndex(section_id));
+
+        for (uint32_t index = 0; index < section_objects->count(); index++) {
+            GameObject* object = static_cast<GameObject*>(section_objects->objectAtIndex(index));
+            CCPoint object_pos = object->getPosition();
+
+            if (CCRect::CCRectContainsPoint(visible_rect, object_pos)) {
+                if (!object->getParent()) {
+                    OrderingData* s = static_cast<OrderingData*>(object->getUserData());
+
+                    bn->addChild(object, s->z_order);
+                    //object->setOrderOfArrival(s->order_of_arrival);
+
+                    bn->sortAllChildren();
+                }
+            } else {
+                if (object->getParent()) {
+                    if (object->getUserData() == nullptr) {
+                        OrderingData s = OrderingData {object->getOrderOfArrival(), object->getZOrder()};
+                        object->setUserData((void*)&s);
+                    }
+
+                    bn->removeChild(object, false);
+                }
+            }
+
+        }
+    }
+}
+
+bool (*levelEditorLayer_init)(LevelEditorLayer* self, GJGameLevel* lvl);
+bool levelEditorLayer_init_H(LevelEditorLayer* self, GJGameLevel* lvl) {
+  levelEditorLayer_init(self, lvl);
+  ExtraLayer::m_lel = self;
+  if(extendEditor) onToggleEditor(true); 
+  else onToggleEditor(false);
+   void** vtable = *(void***)self; // ty omnimenu
+   void (LevelEditorLayer::* ptr)(float) = &LevelEditorLayer::update;
+   void* offset = *(void**)&ptr;
+   DobbyCodePatch(&vtable[((uintptr_t)offset)/sizeof(void*)], uintptrToBytes((uintptr_t)&LevelEditorLayer_update).data(), 4);
+   CCNode* container = MEMBER_BY_OFFSET(CCNode*, self, 0x158);
+
+    if (container && editorHitbox) {
+        HitboxLayer* hitboxes = HitboxLayer::create(self);
+        container->addChild(hitboxes, 9999); 
+    }
+   return true;
+}
+
+void (*PlayerObject_updateShipRotation)(PlayerObject* self, float dt);
+void PlayerObject_updateShipRotation_H(PlayerObject* self, float dt) {
+    if (noRotation) return;
+    PlayerObject_updateShipRotation(self, dt);
+}
+
+void (*PlayerObject_runRotateAction)(PlayerObject* self);
+void PlayerObject_runRotateAction_H(PlayerObject* self) {
+    if (noRotation) return;
+    PlayerObject_runRotateAction(self);
+}
+void (*PlayerObject_runBallRotation2)(PlayerObject* self);
+void PlayerObject_runBallRotation2_H(PlayerObject* self) {
+    if (noRotation) return;
+    PlayerObject_runBallRotation2(self);
+}
+
+void setOriginalScale(CCMenuItemSpriteExtra* btn, float scale) {
+    MEMBER_BY_OFFSET(float, btn, 0x150) = scale;
+}
+
+CCMenuItemSpriteExtra* EditorUI::getSpriteButton2(const char* name, SEL_MenuHandler callback, CCMenu* menu, float scale)
+{
+    auto spr = CCSprite::create(name);
+    auto btnSpr = ButtonSprite::create(spr, 32, 0, 32, 1.0, true, "GJ_button_01.png");
+    auto btn = CCMenuItemSpriteExtra::create(btnSpr, 0, this, callback);
+    btn->setScale(scale);
+    setOriginalScale(btn, scale);
+
+    if (menu) menu->addChild(btn);
+
+    return btn;
+}
+CCMenuItemSpriteExtra* EditorUI::getSpriteButton3(const char* name, SEL_MenuHandler callback, CCMenu* menu, float scale, float sprScale)
+{
+    auto spr = CCSprite::createWithSpriteFrameName(name);
+    spr->setScale(sprScale);
+    auto btnSpr = ButtonSprite::create(spr, 32, 0, 32, 1.0, true, "GJ_button_01.png");
+    auto btn = CCMenuItemSpriteExtra::create(btnSpr, 0, this, callback);
+    btn->setScale(scale);
+    setOriginalScale(btn, scale);
+
+    if (menu) menu->addChild(btn);
+
+    return btn;
+}
+
+void (*EditorUI_createMoveMenu)(EditorUI* self);
+void EditorUI_createMoveMenu_H(EditorUI* self) {
+  if(moreEditorButtons) {
+        CCArray* buttons = CCArray::create();
+
+        CCMenuItemSpriteExtra* btn;
+
+        btn = self->getSpriteButton("edit_upBtn_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9);
+        btn->setTag(3);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton("edit_downBtn_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9);
+        btn->setTag(4);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton("edit_leftBtn_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9);
+        btn->setTag(1);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton("edit_rightBtn_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9);
+        btn->setTag(2);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton("edit_upBtn2_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9);
+        btn->setTag(7);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton("edit_downBtn2_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9);
+        btn->setTag(8);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton("edit_leftBtn2_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9);
+        btn->setTag(5);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton("edit_rightBtn2_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9);
+        btn->setTag(6);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton("edit_upBtn3_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9);
+        btn->setTag(11);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton("edit_downBtn3_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9);
+        btn->setTag(12);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton("edit_leftBtn3_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9);
+        btn->setTag(9);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton("edit_rightBtn3_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9);
+        btn->setTag(10);
+        buttons->addObject(btn);
+
+                btn = self->getSpriteButton3("edit_upBtn_001.png", menu_selector(EditorUI::moveObjectCall2), nullptr, 0.9, 0.8);
+        btn->setTag(1001);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton3("edit_downBtn_001.png", menu_selector(EditorUI::moveObjectCall2), nullptr, 0.9, 0.8);
+        btn->setTag(1002);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton3("edit_leftBtn_001.png", menu_selector(EditorUI::moveObjectCall2), nullptr, 0.9, 0.8);
+        btn->setTag(1003);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton3("edit_rightBtn_001.png", menu_selector(EditorUI::moveObjectCall2), nullptr, 0.9, 0.8);
+        btn->setTag(1004);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton2("edit_upBtn5_001.png", menu_selector(EditorUI::moveObjectCall2), nullptr, 0.9);
+        btn->setTag(1005);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton2("edit_downBtn5_001.png", menu_selector(EditorUI::moveObjectCall2), nullptr, 0.9);
+        btn->setTag(1006);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton2("edit_leftBtn5_001.png", menu_selector(EditorUI::moveObjectCall2), nullptr, 0.9);
+        btn->setTag(1007);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton2("edit_rightBtn5_001.png", menu_selector(EditorUI::moveObjectCall2), nullptr, 0.9);
+        btn->setTag(1008);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton("edit_flipXBtn_001.png", menu_selector(EditorUI::transformObjectCall), nullptr, 0.9);
+        btn->setTag(17);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton("edit_flipYBtn_001.png", menu_selector(EditorUI::transformObjectCall), nullptr, 0.9);
+        btn->setTag(18);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton("edit_cwBtn_001.png", menu_selector(EditorUI::transformObjectCall), nullptr, 0.9);
+        btn->setTag(19);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton("edit_ccwBtn_001.png", menu_selector(EditorUI::transformObjectCall), nullptr, 0.9);
+        btn->setTag(20);
+        buttons->addObject(btn);
+        btn = self->getSpriteButton2("objectInfo_001.png", menu_selector(EditorUI::getObjectInfoCall), nullptr, 0.9);
+        btn->setTag(1);
+        buttons->addObject(btn);
+        CCDirector* director = CCDirector::sharedDirector();
+        auto win_size = director->getWinSize();
+        EditButtonBar* newBar = EditButtonBar::create(buttons, ccp(win_size.width * 0.5 - 5, MEMBER_BY_OFFSET(float, director->getOpenGLView(), 0xe4) + MEMBER_BY_OFFSET(float, self, 0x158) - 6.f), false);
+        MEMBER_BY_OFFSET(EditButtonBar*, self, 0x148) = newBar;
+        self->addChild(newBar, 11);
+  } else EditorUI_createMoveMenu(self);
+    }
+
+    void EditorUI::getObjectInfoCall(CCNode* sender) {
+      if (!MEMBER_BY_OFFSET(GameObject*, this, 0x254) && MEMBER_BY_OFFSET(CCArray*, this, 0x180)->count() <= 0) return;
+      int identifier = sender->getTag();
+      if(identifier == 1) {
+        CCArray* selected = MEMBER_BY_OFFSET(CCArray*, this, 0x180);
+
+    GameObject* definingObject = nullptr;
+    if (selected->count() == 0) {
+      definingObject = MEMBER_BY_OFFSET(GameObject*, this, 0x254);
+      int typeID = MEMBER_BY_OFFSET(int, definingObject, 0x32c);
+
+      CCPoint point = definingObject->getPosition();
+      const char* pointStr = CCString::createWithFormat("{%.0f, %.0f}", point.x, point.y)->getCString();
+
+      int objectType = MEMBER_BY_OFFSET(int, definingObject, 0x2c8);
+      int flipY = definingObject->isFlipY();
+      int flipX = definingObject->isFlipX();
+      int rotation = definingObject->getRotation();
+      FLAlertLayer::create(
+            nullptr,
+            ObjectInfoHandler::getObjectNameFromKey(typeID),
+            CCString::createWithFormat("<cy>Object Type ID: </c>%i\n<cp>Position:</c> %s\n<cr>Object Type:</c> %i\n<cg>Flip X:</c> %i\n<cg>Flip Y:</c> %i\n<cg>Rotation:</c> %i", typeID, pointStr, objectType, flipX, flipY, rotation)->getCString(),
+            "OK",
+            nullptr,
+            300.f
+      )->show();
+    }
+    }
+    }
+
+    void EditorUI::moveObjectCall2(CCNode* sender) {
+    if (!MEMBER_BY_OFFSET(GameObject*, this, 0x254) && MEMBER_BY_OFFSET(CCArray*, this, 0x180)->count() <= 0) return;
+
+    auto transform = ccp(0, 0);
+
+    switch (sender->getTag()) {
+
+        case 1001:
+            transform.y = 1;
+            break;
+        case 1002:
+            transform.y = -1;
+            break;
+        case 1003:
+            transform.x = -1;
+            break;
+        case 1004:
+            transform.x = 1;
+            break;
+        case 1005:
+            transform.y = 15;
+            break;
+        case 1006:
+            transform.y = -15;
+            break;
+        case 1007:
+            transform.x = -15;
+            break;
+        case 1008:
+            transform.x = 15;
+            break;
+
+        default:
+            break;
+    }
+    if (MEMBER_BY_OFFSET(CCArray*, this, 0x180)->count() > 0) {
+        for (int i = 0; i < MEMBER_BY_OFFSET(CCArray*, this, 0x180)->count(); i++) {
+            this->moveObject(static_cast<GameObject*>(MEMBER_BY_OFFSET(CCArray*, this, 0x180)->objectAtIndex(i)), transform);
+        }
+    } else {
+        this->moveObject(MEMBER_BY_OFFSET(GameObject*, this, 0x254), transform);
+    }
+}
+
+void OptionsLayer::onOpenMenu() {
+  this->setTouchEnabled(false);
+  extra = ExtraLayer::create(this);
+  this->addChild(extra, 1000);
+  extra->_setZOrder(10000000);
+}
+
+size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
+    ((std::string*)userp)->append((char*)contents, size * nmemb);
+    return size * nmemb;
+}
+
+void VersionRequest::fetchVersion() {
+  std::thread t(&VersionRequest::networkThread, this);
+  t.detach();
+}
+
+void VersionRequest::networkThread() {
+    void* handle = dlopen("libcurl.so", RTLD_LAZY);
+    if (!handle) handle = dlopen("libgame.so", RTLD_LAZY);
+    if (!handle) return;
+
+    typedef void* (*curl_init_t)();
+    typedef int (*curl_setopt_t)(void*, int, ...);
+    typedef int (*curl_perform_t)(void*);
+    typedef void (*curl_cleanup_t)(void*);
+    typedef const char* (*curl_error_t)(int);
+
+    auto curl_init = (curl_init_t)dlsym(handle, "curl_easy_init");
+    auto curl_setopt = (curl_setopt_t)dlsym(handle, "curl_easy_setopt");
+    auto curl_perform = (curl_perform_t)dlsym(handle, "curl_easy_perform");
+    auto curl_cleanup = (curl_cleanup_t)dlsym(handle, "curl_easy_cleanup");
+
+    void* curl = curl_init();
+    if (curl) {
+        std::string responseString;
+        curl_setopt(curl, 10002, "pok.ps.fhgdps.com/ver.php");
+        curl_setopt(curl, 20011, WriteCallback);
+        curl_setopt(curl, 10001, &responseString);
+        curl_setopt(curl, 64, 0L);
+
+        int res = curl_perform(curl);
+
+        if (res == 0) { // CURLE_OK
+            char* copy = new char[responseString.length() + 1];
+            strcpy(copy, responseString.c_str());
+            MenuLayer::s_newVersion.store(copy); 
+            MenuLayer::s_hasVersionData = true;
+        }
+
+        curl_cleanup(curl);
+    }
+    dlclose(handle);
+}
+
+typedef void (*MenuLayer_Clicked_T)(MenuLayer*, FLAlertLayer*, bool);
+MenuLayer_Clicked_T MenuLayer_FLAlert_Clicked_Orig = nullptr;
+void MenuLayer_FLAlert_Clicked_H(MenuLayer* self, FLAlertLayer* alert, bool btn2) {
+  if(!alert || !btn2) return;
+    switch (alert->getTag()) { 
+      case 1001:
+      cocos2d::CCApplication::sharedApplication().openURL("http://pok.ps.fhgdps.com/downloads");
+      break;
+      case 2:
+      cocos2d::CCApplication::sharedApplication().openURL("http://www.youtube.com/@nano56gd");
+      break;
+      case 0:
+      auto delegate = (AppDelegate *)AppDelegate::get();
+      AppDelegate::trySaveGame();
+      self->endGame();
+    } 
+}
+
+void (*GJGameLevel_savePercentage)(GJGameLevel*, int, bool);
+void GJGameLevel_savePercentage_H(GJGameLevel* self, int percentage, bool asfcsdvfvnvhf) {
+if(safeMode) return;
+}
+
+void (*PlayLayer_showNewBest)(CCLayer*);
+void PlayLayer_showNewBest_H(CCLayer* self) {
+  if(!safeMode) PlayLayer_showNewBest(self);
+}
+
+void (*CocosDenshion_SimpleAudioEngine_playEffect)(char* file, bool loop, float setting1, float setting2, float setting3);
+void CocosDenshion_SimpleAudioEngine_playEffect_H(char* file, bool loop, float setting1, float setting2, float setting3) {
+    if (!fmodSystem) return;
+    FMOD::Sound* sound = nullptr;
+    fmodSystem->createSound(CCString::createWithFormat("file:///android_asset/%s", file)->getCString(), FMOD_DEFAULT, 0, &sound);
+    FMOD::Channel* channel = nullptr;
+    fmodSystem->playSound(sound, nullptr, true, &channel);
+    if (channel) {
+    channel->setPitch(setting1);
+    channel->setPan(setting2);
+    channel->setVolume(setting3);
+    if (loop) {
+    channel->setMode(FMOD_LOOP_NORMAL);
+    channel->setLoopCount(-1);
+    }
+    channel->setPaused(false);
+    }
+}
+
+void (*stopBackgroundMusicJNI_tram)(void*, void*, void*, bool);
+void stopBackgroundMusicJNI_H(void* env, void* clazz, void* methodID, bool idk) {
+    if (bgmChannel) {
+        bgmChannel->stop();
+        bgmChannel = nullptr;
+    }
+    if (idk && bgmSound) {
+        bgmSound->release();
+        bgmSound = nullptr;
+    }
+}
+
+void (*rewindBackgroundMusicJNI_tram)(void*, void*, void*, bool);
+void rewindBackgroundMusicJNI_H(void* env, void* clazz, void* methodID, bool idk) {
+if (bgmChannel) {
+    bgmChannel->setPosition(0, FMOD_TIMEUNIT_MS);
+}
+}
+
+void (*pauseBackgroundMusicJNI_tram)(JNIEnv* env, jclass clazz);
+void pauseBackgroundMusicJNI_H(JNIEnv* env, jclass clazz) {
+if (bgmChannel) {
+        bgmChannel->setPaused(true);
+    }
+fmodSystem->update();
+}
+
+void (*resumeBackgroundMusicJNI_tram)(JNIEnv* env, jclass clazz);
+void resumeBackgroundMusicJNI_H(JNIEnv* env, jclass clazz) {  
+    if (bgmChannel) {
+        bgmChannel->setPaused(false);
+    }
+    fmodSystem->update();
+  }
+
+void (*playBackgroundMusicJNI_tram)(const char *path, bool isLoop);
+void playBackgroundMusicJNI_H(const char *path, bool isLoop) {
+    if (bgmChannel) {
+        bgmChannel->stop();
+        bgmChannel = nullptr;
+    }
+    std::string fullPath;
+        if (path[0] != '/') {
+    fullPath = "file:///android_asset/" + std::string(path);
+        } else fullPath = std::string(path);
+        
+        FMOD_MODE mode = isLoop ? FMOD_LOOP_NORMAL : FMOD_LOOP_OFF;
+        if (fmodSystem) {
+            fmodSystem->createStream(fullPath.c_str(), mode, 0, &bgmSound);
+            fmodSystem->playSound(bgmSound, 0, false, &bgmChannel);
+            fmodSystem->update();
+        }
+}
+
+
+int (*isBackgroundMusicPlayingJNI_tram)();
+int isBackgroundMusicPlayingJNI_H() {
+  if (bgmChannel) {
+  bool playing = false;
+  if (bgmChannel->isPlaying(&playing) == FMOD_OK) {
+  return playing ? 1 : 0;
+  }
+  }
+  return 0;
+}
+
+void (*CCDirector_drawScene)(CCDirector* director);
+void CCDirector_drawScene_H(CCDirector* director) {
+  CCDirector_drawScene(director);
+  if (fmodSystem) {
+        fmodSystem->update();
+  }
+}
+
+int (*AppDelegate_applicationDidFinishLaunching)(AppDelegate* self);
+int AppDelegate_applicationDidFinishLaunching_H(AppDelegate* self) {
+    int ret = AppDelegate_applicationDidFinishLaunching(self);
+    
+    JavaVM* jvm = cocos2d::JniHelper::getJavaVM();
+    g_vm = cocos2d::JniHelper::getJavaVM(); 
+    JNIEnv* env = nullptr;
+    if (jvm->GetEnv((void**)&env, JNI_VERSION_1_4) == JNI_EDETACHED) {
+        if (jvm->AttachCurrentThread(&env, nullptr) != 0) return ret;
+    }
+    jclass activityThread = env->FindClass("android/app/ActivityThread");
+    jmethodID currentActivityThread = env->GetStaticMethodID(activityThread, "currentActivityThread", "()Landroid/app/ActivityThread;");
+    jobject activityThreadObj = env->CallStaticObjectMethod(activityThread, currentActivityThread);
+    jmethodID getApplication = env->GetMethodID(activityThread, "getApplication", "()Landroid/app/Application;");
+    jobject activityContext = env->CallObjectMethod(activityThreadObj, getApplication);
+
+    if (activityContext) {
+        FMOD_Android_JNI_Init(jvm, activityContext);
+        
+        FMOD::System_Create(&fmodSystem);
+        fmodSystem->init(32, FMOD_INIT_NORMAL, nullptr);
+        
+        env->DeleteLocalRef(activityContext);
+    }
+    env->DeleteLocalRef(activityThreadObj);
+    env->DeleteLocalRef(activityThread);
+    return ret;
+}
+
+
+
+int (*scene)(GJGameLevel*);
+int scene_H(GJGameLevel* lvl) {
+  if (bgmChannel) {
+        bgmChannel->stop();
+        bgmChannel = nullptr;
+    }
+    if (bgmSound) {
+        bgmSound->release();
+        bgmSound = nullptr;
+    }
+
+    FMOD::ChannelGroup *masterGroup;
+    fmodSystem->getMasterChannelGroup(&masterGroup);
+    masterGroup->stop();
+    fmodSystem->update();
+    return scene(lvl);
+}
+
+void (*setBackgroundMusicTimeJNI_tram)(float time);
+void setBackgroundMusicTimeJNI_H(float time) {
+unsigned int ms = (unsigned int)(time * 1000.0f);
+bgmChannel->setPosition(ms, FMOD_TIMEUNIT_MS);
+}
+
+void (*setBackgroundMusicVolumeJNI_tram)(float);
+void setBackgroundMusicVolumeJNI_H(float volume) {
+  if (volume < 0.0f) volume = 0.0f;
+  bgmChannel->setVolume(volume);
+}
+
+void (*playEffectJNI_tram)(const char*, bool);
+void playEffectJNI_H(const char* path, bool bLoop) {
+    if (!fmodSystem || !path) return;
+    std::string fullPath = (path[0] == '/') ? path : "file:///android_asset/" + std::string(path);
+    FMOD::Sound* targetSound = nullptr;
+    auto it = sfxCache.find(fullPath);
+    if (it != sfxCache.end()) {
+        targetSound = it->second;
+    } else {
+        FMOD_MODE mode = (bLoop ? FMOD_LOOP_NORMAL : FMOD_LOOP_OFF) | FMOD_DEFAULT;
+        if (fmodSystem->createSound(fullPath.c_str(), mode, 0, &targetSound) == FMOD_OK) {
+            sfxCache[fullPath] = targetSound;
+        }
+    }
+    if (targetSound) {
+        FMOD::Channel* channel = nullptr;
+        fmodSystem->playSound(targetSound, 0, false, &channel);
+    }
+}
+
+
+
+void (*stopEffectJNI_tram)(unsigned int);
+void stopEffectJNI_H(unsigned int) {
+    if (sfxChannel) {
+    sfxChannel->stop();
+    sfxChannel = nullptr;
+    }
+}
+
+int (*LoadingLayer_init)(CCLayer*);
+int LoadingLayer_init_H(CCLayer* self) {
+  LoadingLayer_init(self);
+  auto win_size = CCDirector::sharedDirector()->getWinSize();
+  auto fmodLogo = CCSprite::create("FMODLogo_001.png");
+  fmodLogo->setAnchorPoint(CCPointMake(1.0f, 0.f));
+  fmodLogo->setPosition(CCPointMake(win_size.width -5, 5));
+  self->addChild(fmodLogo);
+  return 1;
+}
+
+void (*PlayerObject_pushButton)(float, void*, int);
+void PlayerObject_pushButton_H(float idk, void* gman, int idk2) {
+PlayerObject_pushButton(idk, gman, idk2);
+auto scene = cocos2d::CCDirector::sharedDirector()->getRunningScene();
+    cocos2d::CCArray* children = scene->getChildren();
+    cocos2d::CCObject* obj;
+
+    PlayLayer* playLayer = nullptr;
+    CCARRAY_FOREACH(children, obj) {
+        if (dynamic_cast<PlayLayer*>(obj)) {
+            playLayer = (PlayLayer*)obj;
+            break;
+        }
+    }
+if(!playLayer) return;
+clicks++;
+float currentTime = MEMBER_BY_OFFSET(float, HidePauseLayer::m_playLayer, 0x2e4);
+clickTimestamps.push_back(currentTime);
+}
+
+bool checkHasDownloadedSong(int ID) {
+  auto newSongID = ID + 1;
+  std::string s_persistentPath = "/storage/emulated/0/Music/saved_songs/" + to_string(newSongID) + ".mp3";
+  std::ifstream file(s_persistentPath);
+  return file.good();
+}
+
+void (*LevelInfoLayer_onPlay)(LevelInfoLayer*);
+void LevelInfoLayer_onPlay_H(LevelInfoLayer* self) {
+auto lvl = MEMBER_BY_OFFSET(GJGameLevel*, self, 0x154);
+auto songID = MEMBER_BY_OFFSET(int, lvl, 0x148);
+if(!checkHasDownloadedSong(songID) && !hasShowedAlert && songID > SONGS && !dontShowAlert) {
+  auto alert = FLAlertLayer::create(
+    self,
+    "No Song",
+    CCString::createWithFormat("This level uses a <cl>custom song</c> that has not been <cg>downloaded</c> yet.\nDo you want to play without music?\n<cy>Download by going to the Custom Song Library and search for the ID %i</c>.", songID + 1)->getCString(), // No CCString
+    "Cancel",
+    "Play",
+    300.f
+);
+  alert->setTag(1000);
+  alert->show();
+  hasShowedAlert = true;
+  return;
+}
+LevelInfoLayer_onPlay(self);
+}
+
+void (*LevelInfoLayer_FLAlertClicked)(LevelInfoLayer*, FLAlertLayer*, bool);
+void LevelInfoLayer_FLAlertClicked_H(LevelInfoLayer* self, FLAlertLayer* alert, bool btn2) {
+  if(btn2 && alert->getTag() == 1000) {
+    LevelInfoLayer_onPlay(self);
+    return;
+  }
+  LevelInfoLayer_FLAlertClicked(self, alert, btn2);
+}
+
+std::string formattedTime() {
+    auto now = std::chrono::system_clock::now();
+    std::time_t timer = std::chrono::system_clock::to_time_t(now);
+    std::tm bt = *std::localtime(&timer);
+    std::ostringstream oss;
+    char buffer[100];
+    std::strftime(buffer, sizeof(buffer), "[%Y-%m-%d %H:%M:%S]", &bt);
+    std::string str(buffer); 
+    return str;
+}
+
+#include <signal.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <string.h>
+#include <stdio.h>
+
+struct sigaction old_sa[NSIG];
+
+void native_crash_handler(int sig, siginfo_t* info, void* secret) {
+    const char* path = "/storage/emulated/0/violetps/crash_log.txt";
+    int fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0666);
+    
+    if (fd != -1) {
+        char buf[128];
+        int len = snprintf(buf, sizeof(buf), "Native Crash\nSignal: %d\n", sig);
+        write(fd, buf, len);
+        close(fd);
+    }
+
+    if (old_sa[sig].sa_flags & SA_SIGINFO) {
+        if (old_sa[sig].sa_sigaction) {
+            old_sa[sig].sa_sigaction(sig, info, secret);
+        }
+    } else {
+        if (old_sa[sig].sa_handler == SIG_DFL) {
+            signal(sig, SIG_DFL);
+            raise(sig);
+        } else if (old_sa[sig].sa_handler != SIG_IGN) {
+            old_sa[sig].sa_handler(sig);
+        }
+    }
+}
+
+void setup_crash_handler() {
+    stack_t ss;
+    ss.ss_sp = malloc(SIGSTKSZ);
+    ss.ss_size = SIGSTKSZ;
+    ss.ss_flags = 0;
+    sigaltstack(&ss, NULL);
+
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = native_crash_handler;
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    sigfillset(&sa.sa_mask);
+
+    int signals[] = {SIGSEGV, SIGABRT, SIGFPE, SIGILL, SIGBUS};
+    for (int s : signals) {
+        sigaction(s, &sa, &old_sa[s]);
+    }
+}
+
+void (*EditorUI_constrainGameLayerPosition)(CCLayer* self);
+void EditorUI_constrainGameLayerPosition_H(CCLayer* self) {
+    if(!extendEditor) EditorUI_constrainGameLayerPosition(self);
+}
+
+void (*EditorUI_selectObject)(void*, void*);
+void EditorUI_selectObject_H(void* self, void* object) {
+    if (filter && TARGET_OBJ != nullptr) {
+        auto objectID = MEMBER_BY_OFFSET(void*, object, 0x32c);
+        if (objectID == TARGET_OBJ) {
+            EditorUI_selectObject(self, object);
+        }
+    } else {
+        EditorUI_selectObject(self, object);
+    }
+}
+
+void (*EditorUI_onDelete)(void*);
+void EditorUI_onDelete_H(void* self) {
+   auto object = MEMBER_BY_OFFSET(LevelEditorLayer*, self, 0x1d0)->objectAtPosition(MEMBER_BY_OFFSET(CCPoint, self, 0x234));
+   if(!object) return;
+   if(!filter || MEMBER_BY_OFFSET(void*, object, 0x32c) == TARGET_OBJ) EditorUI_onDelete(self);
+}
+
+// this one is optional since its not actually needed
+void (*EditorUI_onDeleteSelected)(void*);
+void EditorUI_onDeleteSelected_H(void* self) {
+if(filter) {
+CCArray* selected = MEMBER_BY_OFFSET(CCArray*, self, 0x180);
+    LevelEditorLayer* edit = MEMBER_BY_OFFSET(LevelEditorLayer*, self, 0x1d0);
+    CCArray* sections = MEMBER_BY_OFFSET(CCArray*, edit, 0x144);
+    if(edit == nullptr || sections == nullptr || selected == nullptr) {
+        return;
+    }
+    if (selected->count() > 0) {
+        CCObject* pObj = NULL;
+        CCARRAY_FOREACH(selected, pObj) {
+            GameObject* object = (GameObject*)pObj;
+            if(object == TARGET_OBJ) MEMBER_BY_OFFSET(LevelEditorLayer*, self, 0x1d0)->removeObject(object);
+        }
+    } else {
+        auto object = MEMBER_BY_OFFSET(GameObject*, self, 0x254);
+        auto* objectID = MEMBER_BY_OFFSET(void*, object, 0x32c);
+        if(TARGET_OBJ == objectID) EditorUI_onDeleteSelected(self);
+    }
+} else EditorUI_onDeleteSelected(self);
+}
+
+void (*CCTransitionFade_create)(float, CCScene*, const ccColor3B&);
+void CCTransitionFade_create_H(float dur, CCScene* scene, const ccColor3B& color) {
+    if(noSceneTransition) CCTransitionFade_create(0.f, scene, color);
+    else CCTransitionFade_create(dur, scene, color);
+}
+
+void DrawGridLayer::update(float dt) {
+g_lineX += dt * 311.58f;
+}
+
+void (*DrawGridLayer_draw)(DrawGridLayer* self);
+void DrawGridLayer_draw_H(DrawGridLayer* self) {
+    DrawGridLayer_draw(self);
+    if(g_playback) {
+        static long lastFrameId = -1;
+        long currentFrameId = cocos2d::CCDirector::sharedDirector()->getTotalFrames();
+        if (currentFrameId != lastFrameId) {
+            float dt = cocos2d::CCDirector::sharedDirector()->getAnimationInterval();
+            g_lineX += dt * 311.58f;
+            
+            lastFrameId = currentFrameId;
+        }
+        ccDrawColor4F(0.0f, 1.f, 0.0f, 1.0f);
+        ccDrawLine(ccp(g_lineX, 0), ccp(g_lineX, 100000));
+    }
+}
+
+void EditLevelLayer::exportGMD(CCObject*) {
+    cocos2d::JniMethodInfo t;
+    if (cocos2d::JniHelper::getStaticMethodInfo(t, 
+        "org/cocos2dx/lib/Cocos2dxActivity",
+        "openGmdSelector",
+        "()V")) 
+    {
+        t.env->CallStaticVoidMethod(t.classID, t.methodID);
+        t.env->DeleteLocalRef(t.classID);
+    }
+}
+
+void LevelBrowserLayer::onSelectGMD() {
+    cocos2d::JniMethodInfo t;
+    if (cocos2d::JniHelper::getStaticMethodInfo(t, 
+        "org/cocos2dx/lib/Cocos2dxActivity",
+        "openGmdImportSelector",
+        "()V")) 
+    {
+        t.env->CallStaticVoidMethod(t.classID, t.methodID);
+        t.env->DeleteLocalRef(t.classID);
+    }
+}
+
+void LevelBrowserLayer::loadLevel(GJGameLevel* level) {
+    CCLog("1");
+    level->m_nLevelID = 0;
+    level->m_eLevelType = GJLevelType::Editor;
+#ifdef FORCE_AUTO_SAFE_MODE
+    level->m_bIsVerified = false;
+#if GAME_VERSION > GV_1_2
+    level->m_bIsDemon = false;
+    level->m_nStars = 0;
+#endif
+#endif
+    MEMBER_BY_OFFSET(CCArray*, LocalLevelManager::sharedState(), 0x130)->addObject(level);
+    runAction(CCSequence::create(
+        CCDelayTime::create(0.2f),
+        CCCallFunc::create(this, callfunc_selector(LevelBrowserLayer::reload)),
+        nullptr
+    ));
+    
+}
+
+bool (*EditLevelLayer_init)(CCLayer*, GJGameLevel*);
+bool EditLevelLayer_init_H(CCLayer* self, GJGameLevel* lvl) {
+    g_currentExportLevel = lvl;
+    EditLevelLayer_init(self, lvl);
+    auto win_size = CCDirector::sharedDirector()->getWinSize();
+    auto buttonMenu2 = CCMenu::create();
+auto button2 = CCSprite::create("GJ_violetMod_001.png");
+CCMenuItemSpriteExtra* menuBtn2 = CCMenuItemSpriteExtra::create(button2, button2, self, menu_selector(EditLevelLayer::onOpenMenu));
+buttonMenu2->setPosition(CCPointZero);
+menuBtn2->setPosition({-60, win_size.height + 90});
+buttonMenu2->addChild(menuBtn2);
+buttonMenu2->setScale(0.5f);
+buttonMenu2->setPosition(-55, 12.5);
+self->addChild(buttonMenu2, 100);
+    CCSprite* exportSpr = CCSprite::create("gdshare_export.png");
+    CCMenuItemSpriteExtra* exportBtn = CCMenuItemSpriteExtra::create(exportSpr, exportSpr, self, menu_selector(EditLevelLayer::exportGMD));
+    auto shareMenu = CCMenu::create(exportBtn, NULL);
+    self->addChild(shareMenu, 1001);
+    shareMenu->setPosition(ccp(win_size.width - 29, win_size.height - 85.f));
+    return true;
+}
+
+extern "C" {
+    JNIEXPORT void JNICALL Java_org_cocos2dx_lib_Cocos2dxActivity_nativeOnGmdSaveSelected(JNIEnv* env, jobject thiz, jobject uri) {
+        GJGameLevel* level = g_currentExportLevel; 
+
+        if (!level || !uri) return;
+        jclass activityClass = env->GetObjectClass(thiz);
+        jmethodID getCR = env->GetMethodID(activityClass, "getContentResolver", "()Landroid/content/ContentResolver;");
+        jobject resolver = env->CallObjectMethod(thiz, getCR);
+
+        jclass resolverClass = env->FindClass("android/content/ContentResolver");
+        jmethodID openOut = env->GetMethodID(resolverClass, "openOutputStream", "(Landroid/net/Uri;)Ljava/io/OutputStream;");
+        jobject outputStream = env->CallObjectMethod(resolver, openOut, uri);
+
+        if (!outputStream) return;
+        auto dict = new DS_Dictionary();
+        void* encodeWithCoder = DobbySymbolResolver("libgame.so", "_ZN11GJGameLevel15encodeWithCoderEP13DS_Dictionary");
+        if (encodeWithCoder) {
+            ((void(*)(GJGameLevel*, DS_Dictionary*))encodeWithCoder)(level, dict);
+        }
+
+        std::string strObj = dict->saveRootSubDictToString();
+        
+        jbyteArray jData = env->NewByteArray(strObj.length());
+        env->SetByteArrayRegion(jData, 0, strObj.length(), reinterpret_cast<const jbyte*>(strObj.c_str()));
+
+        jclass outputStreamClass = env->FindClass("java/io/OutputStream");
+        jmethodID writeMethod = env->GetMethodID(outputStreamClass, "write", "([B)V");
+        jmethodID closeMethod = env->GetMethodID(outputStreamClass, "close", "()V");
+
+        env->CallVoidMethod(outputStream, writeMethod, jData);
+        env->CallVoidMethod(outputStream, closeMethod);
+
+        env->DeleteLocalRef(jData);
+        env->DeleteLocalRef(outputStream);
+        env->DeleteLocalRef(outputStreamClass);
+        env->DeleteLocalRef(resolver);
+        env->DeleteLocalRef(resolverClass);
+        env->DeleteLocalRef(activityClass);
+        
+        dict->release();
+    }
+}
+
+void* getCurrentLayer() {
+    return cocos2d::CCDirector::sharedDirector()->getRunningScene();
+}
+
+void LevelBrowserLayer::reload() {
+    CCDirector::sharedDirector()->replaceScene(CCTransitionFade::create(0.5f, LevelBrowserLayer::scene(MEMBER_BY_OFFSET(GJSearchObject*, this, 0x154))));
+}
+
+extern "C" {
+    JNIEXPORT void JNICALL Java_org_cocos2dx_lib_Cocos2dxActivity_nativeOnGmdImportSelected(JNIEnv* env, jobject thiz, jobject uri) {
+        if (!uri) return;
+        jclass activityClass = env->GetObjectClass(thiz);
+        jmethodID getCR = env->GetMethodID(activityClass, "getContentResolver", "()Landroid/content/ContentResolver;");
+        jobject resolver = env->CallObjectMethod(thiz, getCR);
+        jclass resolverClass = env->FindClass("android/content/ContentResolver");
+        jmethodID openIn = env->GetMethodID(resolverClass, "openInputStream", "(Landroid/net/Uri;)Ljava/io/InputStream;");
+        jobject inputStream = env->CallObjectMethod(resolver, openIn, uri);
+        if (!inputStream) return;
+        std::vector<uint8_t> result;
+        jclass streamClass = env->FindClass("java/io/InputStream");
+        jmethodID readMethod = env->GetMethodID(streamClass, "read", "([B)I");
+        jbyteArray buffer = env->NewByteArray(8192);
+        while (true) {
+            jint bytesRead = env->CallIntMethod(inputStream, readMethod, buffer);
+            if (bytesRead <= 0) break;
+            jbyte* bytes = env->GetByteArrayElements(buffer, nullptr);
+            result.insert(result.end(), bytes, bytes + bytesRead);
+            env->ReleaseByteArrayElements(buffer, bytes, JNI_ABORT);
+        }
+        jmethodID closeMethod = env->GetMethodID(streamClass, "close", "()V");
+        env->CallVoidMethod(inputStream, closeMethod);
+        std::string str(result.begin(), result.end());
+        auto dict = new DS_Dictionary();
+        dict->retain();
+        if (dict->loadRootSubDictFromString(str)) {
+            typedef GJGameLevel* (*createWithCoder_t)(DS_Dictionary*);
+            static auto createFunc = (createWithCoder_t)DobbySymbolResolver("libgame.so", "_ZN11GJGameLevel15createWithCoderEP13DS_Dictionary");
+            
+            if (createFunc) {
+                GJGameLevel* level = createFunc(dict);
+                if (level) {
+                    level->retain();
+                    g_importedLevel = level;
+                }
+            }
+        }
+        dict->release(); 
+        env->DeleteLocalRef(buffer);
+        env->DeleteLocalRef(inputStream);
+        env->DeleteLocalRef(resolver);
+        env->DeleteLocalRef(resolverClass);
+        env->DeleteLocalRef(activityClass); 
+    }
+}
+
+void LevelBrowserLayer::onImport(CCObject* sender) {
+    onSelectGMD();
+    this->schedule(schedule_selector(LevelBrowserLayer::checkImport), 0.1f);
+}
+
+void LevelBrowserLayer::checkImport(float dt) {
+    if (g_importedLevel != nullptr) {
+        this->unschedule(schedule_selector(LevelBrowserLayer::checkImport));
+        
+        this->loadLevel(g_importedLevel);
+        g_importedLevel->release();
+        g_importedLevel = nullptr;
+    }
+}
+
+bool (*LevelBrowserLayer_init)(CCLayer* self, GJSearchObject* search);
+bool LevelBrowserLayer_init_H(CCLayer* self, GJSearchObject* search) {
+    LevelBrowserLayer_init(self, search);
+    if(MEMBER_BY_OFFSET(int, search, 0x128) != 98) return true;
+        auto director = CCDirector::sharedDirector();
+        auto winSize = director->getWinSize();
+        CCMenu* importMenu = CCMenu::create();
+        CCSprite* importSpr = cocos2d::CCSprite::create("gdshare_import.png");
+        CCMenuItemSpriteExtra* importBtn = CCMenuItemSpriteExtra::create(importSpr, importSpr, self, menu_selector(LevelBrowserLayer::onImport));
+        importMenu->addChild(importBtn);
+        self->addChild(importMenu, 100000);
+        importMenu->setPosition(ccp(winSize.width - 30.f, 90.f));
+    return true;
+}
 
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
+  setup_crash_handler();
+  HOOK("_ZN8EditorUI12ccTouchEndedEPN7cocos2d7CCTouchEPNS0_7CCEventE", EditorUI_ccTouchEnded_H, EditorUI_ccTouchEnded);
+  HOOK("_ZN8EditorUI12ccTouchBeganEPN7cocos2d7CCTouchEPNS0_7CCEventE", EditorUI_ccTouchBegan_H, EditorUI_ccTouchBegan);
+  HOOK("_ZN17LevelBrowserLayer4initEP14GJSearchObject", LevelBrowserLayer_init_H, LevelBrowserLayer_init);
+  HOOK("_ZN13DrawGridLayer4drawEv", DrawGridLayer_draw_H, DrawGridLayer_draw);
+  HOOK("_ZN13MenuGameLayer4initEv", MenuGameLayer_init_H, MenuGameLayer_init);
+  HOOK("_ZN7cocos2d16CCTransitionFade6createEfPNS_7CCSceneERKNS_10_ccColor3BE", CCTransitionFade_create_H, CCTransitionFade_create);
+  // HOOK("_ZN8EditorUI4drawEv", EditorUI_draw_H, EditorUI_draw);
+  HOOK("_ZN8EditorUI8onDeleteEv", EditorUI_onDelete_H, EditorUI_onDelete);
+  HOOK("_ZN8EditorUI16onDeleteSelectedEv", EditorUI_onDeleteSelected_H, EditorUI_onDeleteSelected);
+  HOOK("_ZN8EditorUI12selectObjectEP10GameObject", EditorUI_selectObject_H, EditorUI_selectObject);
+  HOOK("_ZN8EditorUI26constrainGameLayerPositionEv", EditorUI_constrainGameLayerPosition_H, EditorUI_constrainGameLayerPosition);
+  HOOK("_ZN14LevelInfoLayer15FLAlert_ClickedEP12FLAlertLayerb", LevelInfoLayer_FLAlertClicked_H, LevelInfoLayer_FLAlertClicked);
+  HOOK("_ZN14LevelInfoLayer6onPlayEv", LevelInfoLayer_onPlay_H, LevelInfoLayer_onPlay);
+
+  HOOK("_ZN12PlayerObject10pushButtonE12PlayerButton", PlayerObject_pushButton_H, PlayerObject_pushButton);
+  HOOK("_ZN12LoadingLayer4initEv", LoadingLayer_init_H, LoadingLayer_init);
+  HOOK("_ZN16LevelEditorLayer5sceneEP11GJGameLevel", scene_H, scene);
+
+  HOOK("_ZN11AppDelegate29applicationDidFinishLaunchingEv", AppDelegate_applicationDidFinishLaunching_H, AppDelegate_applicationDidFinishLaunching);
+  HOOK("_ZN7cocos2d10CCDirector9drawSceneEv", CCDirector_drawScene_H, CCDirector_drawScene);
+
+  /*********************************** REPLACE SIMPLEAUDIOENGINE WITH FMOD ***********************************/
+  HOOK("resumeBackgroundMusicJNI", resumeBackgroundMusicJNI_H, resumeBackgroundMusicJNI_tram);
+  HOOK("pauseBackgroundMusicJNI", pauseBackgroundMusicJNI_H, pauseBackgroundMusicJNI_tram);
+  HOOK("stopBackgroundMusicJNI", stopBackgroundMusicJNI_H, stopBackgroundMusicJNI_tram);
+  HOOK("playBackgroundMusicJNI", playBackgroundMusicJNI_H, playBackgroundMusicJNI_tram);
+  HOOK("isBackgroundMusicPlayingJNI", isBackgroundMusicPlayingJNI_H, isBackgroundMusicPlayingJNI_tram);
+  HOOK("setBackgroundMusicTimeJNI", setBackgroundMusicTimeJNI_H, setBackgroundMusicTimeJNI_tram);
+  HOOK("setBackgroundMusicVolumeJNI", setBackgroundMusicVolumeJNI_H, setBackgroundMusicVolumeJNI_tram);
+  HOOK("playEffectJNI", playEffectJNI_H, playEffectJNI_tram);
+  HOOK("stopEffectJNI", stopEffectJNI_H, stopEffectJNI_tram);
+  HOOK("rewindBackgroundMusicJNI", rewindBackgroundMusicJNI_H, rewindBackgroundMusicJNI_tram);
+  /*******************************************************************************************************/
+
+  // HOOK("_ZN9PlayLayer11showNewBestEv", PlayLayer_showNewBest_H, PlayLayer_showNewBest);
+  // HOOK("_ZN11GJGameLevel14savePercentageEib", GJGameLevel_savePercentage_H, GJGameLevel_savePercentage);
+  HOOK("_ZN9MenuLayer15FLAlert_ClickedEP12FLAlertLayerb", MenuLayer_FLAlert_Clicked_H, MenuLayer_FLAlert_Clicked_Orig);
+  HOOK("_ZN12OptionsLayer11customSetupEv", OptionsLayer_customSetup_H, OptionsLayer_customSetup);
+  // HOOK("_ZN13CocosDenshion17SimpleAudioEngine19playBackgroundMusicEPKcb", CocosDenshion_SimpleAudioEngine_playBackgroundMusic_H, CocosDenshion_SimpleAudioEngine_playBackgroundMusic);
+  HOOK("_ZN8EditorUI14createMoveMenuEv", EditorUI_createMoveMenu_H, EditorUI_createMoveMenu);
+  HOOK("_ZN12PlayerObject18updateShipRotationEf", PlayerObject_updateShipRotation_H, PlayerObject_updateShipRotation);
+  HOOK("_ZN12PlayerObject15runRotateActionEv", PlayerObject_runRotateAction_H, PlayerObject_runRotateAction);
+  HOOK("_ZN12PlayerObject16runBallRotation2Ev", PlayerObject_runBallRotation2_H, PlayerObject_runBallRotation2);
+  // HOOK("_ZN10LevelTools8getLevelEi", levelTools_getLevel_H, levelTools_getLevel);
+  HOOK("_ZN16LevelEditorLayer4initEP11GJGameLevel", levelEditorLayer_init_H, levelEditorLayer_init);
   // HOOK("_ZN8EditorUI12ccTouchBeganEPN7cocos2d7CCTouchEPNS0_7CCEventE", EditorUI_ccTouchMoved_H, EditorUI_ccTouchMoved);
   HOOK("_ZN8EditorUI12showMaxErrorEv", EditorUI_showMaxError_H, EditorUI_showMaxError);
   HOOK("_ZN12PlayerObject15playerDestroyedEv", PlayerObject_playerDestroyed_H, PlayerObject_playerDestroyed);
@@ -2122,8 +4389,8 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
   HOOK("_ZN12CreatorLayer4initEv", CreatorLayer_init_H, CreatorLayer_init);
 
   HOOK("_ZN18LevelSettingsLayer4initEP19LevelSettingsObject", LevelSettingsLayer_init_H, LevelSettingsLayer_init);
-  HOOK("_ZN11GameManager14isIconUnlockedEi8IconType", GameManager_isIconUnlocked_H, GameManager_isIconUnlocked);
-  HOOK("_ZN11GameManager15isColorUnlockedEib", GameManager_isColorUnlocked_H, GameManager_isColorUnlocked);
+  // HOOK("_ZN11GameManager14isIconUnlockedEi8IconType", GameManager_isIconUnlocked_H, GameManager_isIconUnlocked);
+  // HOOK("_ZN11GameManager15isColorUnlockedEib", GameManager_isColorUnlocked_H, GameManager_isColorUnlocked);
 
   HOOK("_ZN12SupportLayer7onEmailEv", SupportLayer_onEmail_H, SupportLayer_onEmail);
 
@@ -2132,8 +4399,6 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
   HOOK("_ZN7UILayer4initEv", UILayer_init_H, UILayer_init);
   HOOK("_ZN9PlayLayer10resetLevelEv", PlayLayer_resetLevel_H, PlayLayer_resetLevel);
   HOOK("_ZN9PlayLayer6resumeEv", PlayLayer_resume_H, PlayLayer_resume);
-
-  HOOK("_ZN13CocosDenshion17SimpleAudioEngine22setBackgroundMusicTimeEf", setBackgroundMusicTimeJNI_H, setBackgroundMusicTimeJNI);
 
   HOOK("_ZN10PauseLayer11customSetupEv", PauseLayer_customSetup_H, PauseLayer_customSetup);
 
@@ -2144,14 +4409,51 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
 
   HOOK("_ZN9PlayLayer6updateEf", PlayLayer_onUpdate_H, PlayLayer_onUpdate);
   
-  /* HOOK("_ZN10LevelTools14getAudioStringEi", LevelTools_getAudioString_H, LevelTools_getAudioString);
-  HOOK("_ZN10LevelTools14artistForAudioEi", LevelTools_artistForAudio_H, LevelTools_artistForAudio);
-  HOOK("_ZN10LevelTools13nameForArtistEi", LevelTools_nameForArtist_H, LevelTools_nameForArtist); */
+  HOOK("_ZN10LevelTools14getAudioStringEi", LevelTools_getAudioString_H, LevelTools_getAudioString);
+  // HOOK("_ZN10LevelTools14artistForAudioEi", LevelTools_artistForAudio_H, LevelTools_artistForAudio);
+  // HOOK("_ZN10LevelTools13nameForArtistEi", LevelTools_nameForArtist_H, LevelTools_nameForArtist); */
   
   HOOK("_ZN9LevelCell19loadCustomLevelCellEv", LevelCell_loadCustomLevelCell_H, LevelCell_loadCustomLevelCell);
   HOOK("_ZN11GJGameLevel15encodeWithCoderEP13DS_Dictionary", GJGameLevel_encodeWithCoder_H, GJGameLevel_encodeWithCoder);
   HOOK("_ZN11GJGameLevel15createWithCoderEP13DS_Dictionary", GJGameLevel_createWithCoder_H, GJGameLevel_createWithCoder);
   HOOK("_ZN14LevelInfoLayer4initEP11GJGameLevel", LevelInfoLayer_init_H, LevelInfoLayer_init);
   HOOK("_ZN11GJGameLevelD1Ev", GJGameLevel_destructor_H, GJGameLevel_destructor); 
+
+  PatchManager pm;
+  pm.cpatch(0x14d8d4, CCString::createWithFormat("%02X 29", SONGS + 1)->getCString()); // LevelSettingsLayer::selectSong
+  pm.cpatch(0x14d8d8, CCString::createWithFormat("%02X 21", SONGS)->getCString()); // LevelSettingsLayer::selectSong
+  pm.cpatch(0x14d920, CCString::createWithFormat("%02X 28", SONGS + 1)->getCString()); // LevelSettingsLayer::audioNext
+
+  // pm.cpatch(0x16bbf4, "10 2d"); // LevelSelectLayer::init
+
+  pm.cpatch(0x16aa8c, "04 21"); // LevelPage::init
+
+  editorPatch.cpatch(0x14fff4, "00 00 00 00"); // EditorUI::onCreateObject
+  editorPatch.cpatch(0x14ee10, "00 00 00 00"); // EditorUI::moveObject
+
+  editorPatch.cpatch(0x14fffc, "00 FF FF 48"); // EditorUI::onCreateObject
+  // editorPatch.cpatch(0x14ee18, "00 FF FF 48"); // EditorUI::moveObject
+
+  iconPatch.cpatch(0x13bd8c, "01 20 70 47");
+  iconPatch.cpatch(0x13be2c, "01 20 70 47");
+
+  /*
+  pm.cpatch(0x139968, "00 BF 00 BF"); // PlayLayer::resetLevel
+  pm.cpatch(0x138bb2, "00 BF 00 BF"); // PlayLayer::resume
+  */
+
+  pm.cpatch(0x1399a0, "00 BF 00 BF"); // PlayLayer::resetLevel
+
+  controlPatch.cpatch(0x1545aa, "00 BF 00 BF 00 BF 00 BF 00 BF 00 BF 00 BF 00 BF 00 BF 00 BF 00 BF 00 BF 00 BF");
+
+  flipPatch = MemoryPatch::createWithHex("libgame.so", 0x1373fe, "1DE0"); 
+
+
+  playerObjectPatch.cpatch(0x1446ee, "00 BF 00 BF");
+  playerObjectPatch.cpatch(0x1461e6, "00 BF 00 BF");
+  playerObjectPatch.cpatch(0x145054, "00 BF 00 BF");
+
+
+  pm.Modify();
   return JNI_VERSION_1_6;
 }

@@ -29,32 +29,27 @@ namespace hooking {
         return handle;
     }
 
-    // Core hook function: 'func' must be a void* pointing to the replacement function,
-    // and 'origFunc' must be a void** where the original pointer will be stored.
     inline void hook(const char* symbol, void* func, void** origFunc) {
-        void* h = getHandle();
-        if (!h) {
-            __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, "hook: no handle to resolve %s", symbol);
-            return;
-        }
-        void* addr = dlsym(h, symbol);
-        if (!addr) {
-            __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, "dlsym('%s') failed: %s", symbol, dlerror());
-            return;
-        }
-        __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "hook: resolving %s -> %p, installing %p", symbol, addr, func);
-        DobbyHook(addr, func, origFunc);
+     void* h = getHandle();
+    if (!h) return;
+    void* addr = dlsym(h, symbol);
+    if (!addr) {
+        __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, "dlsym('%s') failed", symbol);
+        return;
     }
+
+	uintptr_t thumb_addr = reinterpret_cast<uintptr_t>(addr);
+    if ((thumb_addr & 1) == 0) {
+        thumb_addr |= 1; 
+    }
+    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "hook: %s -> %u", symbol, thumb_addr);
+    DobbyHook((void*)thumb_addr, func, origFunc);
 }
 
-// Helper macro that safely casts a typed function pointer to void* and passes
-// the address of the trampoline variable as void**.
+};
+
 #define HOOK(symbol, newfunc, trampoline) do { \
-    /*
-     * Use reinterpret_cast between function-pointer types first (allowed),
-     * then convert that function-pointer to void*; this avoids errors when
-     * the replacement function has a different signature.
-     */ \
+ \
     void* __newf = reinterpret_cast<void*>(reinterpret_cast<void(*)()>(newfunc)); \
     hooking::hook(symbol, __newf, reinterpret_cast<void**>(&(trampoline))); \
 } while (0)

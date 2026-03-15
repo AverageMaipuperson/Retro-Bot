@@ -7,6 +7,7 @@
 #include <cocos2d.h>
 #include <cstdlib> 
 #include <cstdio>
+#include <algorithm>
 bool hasChanged = false;
 bool doReset = false;
 
@@ -19,6 +20,31 @@ CCTextInputNode* ExtraLayer::m_speedHackInput = nullptr;
 CCSprite* getToggleSpriteee(CCSprite* on, CCSprite* off, bool state) { return (state) ? on : off; }
 CCMenuItemSprite* getMenuToggleSpriteee(CCMenuItemSprite* on, CCMenuItemSprite* off, bool state) { return (state) ? on : off; }
 
+struct LegacyString {
+    struct Metadata {
+        int capacity;
+        int length;
+        int refCount;
+    };
+    char* data;
+};
+
+// helper to create a string in the format the game expects
+void* to_fake_str2(const char* text) {
+    size_t len = strlen(text);
+    auto* totalBuffer = (uint8_t*)malloc(12 + len + 1);
+
+    int* meta = (int*)totalBuffer;
+    meta[0] = len;
+    meta[1] = len;
+    meta[2] = -1;
+    
+    char* dataPtr = (char*)(totalBuffer + 12);
+    strcpy(dataPtr, text);
+    
+    return dataPtr; // the game expects a pointer to the TEXT, not the header
+}
+
 void SpeedhackOptionsLayer::decrement() {
   ExtraLayer::m_speedhack -= 0.1f;
   if (ExtraLayer::m_speedhack < 0.1f) {
@@ -30,8 +56,8 @@ void SpeedhackOptionsLayer::decrement() {
 
 void SpeedhackOptionsLayer::increment() {
   ExtraLayer::m_speedhack += 0.1f;
-  if (ExtraLayer::m_speedhack > 10.f) {
-    ExtraLayer::m_speedhack = 9.9f;
+  if (ExtraLayer::m_speedhack > 999.f) {
+    ExtraLayer::m_speedhack = 999.9f;
   }
   ExtraLayer::m_speedHackInput->setString(CCString::createWithFormat("%.1f", ExtraLayer::m_speedhack)->getCString());
   hasChanged = true;
@@ -117,8 +143,7 @@ auto titleLabel = CCLabelBMFont::create(
     textInput->setMaxLabelScale(0.7);
     textInput->setLabelPlaceholderScale(0.7);
     MEMBER_BY_OFFSET(int, textInput, 0x170) = 4; // char limit
-    // textInput->setAllowedChars("1234567890."); // set allowed chars
-    // textInput->setAllowedChars("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,+-/!?");
+    MEMBER_BY_OFFSET(void*, textInput, 0x150) = to_fake_str2("0123456789.");
     textInput->setAnchorPoint({0, 0.5});
 
     auto menu2 = CCMenu::create();
@@ -146,6 +171,12 @@ auto titleLabel = CCLabelBMFont::create(
 
   rightButton->setScale(0.8f);
   menu3->addChild(rightButton);
+
+  ExtraLayer* refExtra = dynamic_cast<ExtraLayer*>(referrer);
+  auto speedhackMusicBtn = refExtra->optionToggler("Speedhack Music", &ExtraLayer::m_speedhackMusic, true, ExtraLayerInfo::InfoType::SPEEDM);
+  speedhackMusicBtn->setPosition(win_size.width / 4 + 20, win_size.height - 170);
+
+  mainLayoutLayer->addChild(speedhackMusicBtn);
 
   this->addChild(textInput);
 
@@ -183,23 +214,7 @@ auto titleLabel = CCLabelBMFont::create(
     const char* str = MEMBER_BY_OFFSET(cocos2d::CCTextFieldTTF*, ExtraLayer::m_speedHackInput, 0x168)->getString();
     std::string cppString = str;
     auto number = atof(str);
-    if(!hasChanged && (number - ExtraLayer::m_speedhack) != 0) {
-    bool valid = true;
-    bool belowOne = false;
-    for (char c : cppString) {
-        if (!std::isdigit(static_cast<unsigned char>(c))) {
-            valid = false;
-        }
-        if(c == 0) belowOne = true;
-    }
-    if(!cppString.empty() && cppString[0] == '0') belowOne = true;
-    if (((number >= 10 && number <= 99) || belowOne) && std::stod(str) > 1.0) { ExtraLayer::m_speedhack = number / 10;
-      ExtraLayer::m_speedHackInput->setString(CCString::createWithFormat("%.1f", ExtraLayer::m_speedhack / 10)->getCString());
- } else if(!valid || number < 0.1) {
-      ExtraLayer::m_speedhack = 1.0f;
-      ExtraLayer::m_speedHackInput->setString("1.0");
- } else ExtraLayer::m_speedhack = number;
-} else ExtraLayer::m_speedhack = number;
+    ExtraLayer::m_speedhack = number;
 cocos2d::CCUserDefault *def = cocos2d::CCUserDefault::sharedUserDefault();
   def->setFloatForKey("speedhackInt", ExtraLayer::m_speedhack);
     def->flush();

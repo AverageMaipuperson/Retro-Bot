@@ -3,6 +3,7 @@
 #include "../vendor/robtop/ButtonSprite.hpp"
 #include "../vendor/robtop/EditorConfigurationsLayer.hpp"
 #include "../vendor/robtop/CCMenuItemToggler.hpp"
+#include "../vendor/robtop/NoclipTintOptionsLayer.hpp"
 #include <cocos2d.h>
 
 CCSprite* getToggleSpritee(CCSprite* on, CCSprite* off, bool state) { return (state) ? on : off; }
@@ -10,10 +11,6 @@ CCMenuItemSprite* getMenuToggleSpritee(CCMenuItemSprite* on, CCMenuItemSprite* o
 
 class ToggleHack {
     public:
-    void toggleDeaths() {
-      ExtraLayer::m_deaths = !ExtraLayer::m_deaths;
-    }
-
     void toggleFlash() {
       ExtraLayer::m_flash = !ExtraLayer::m_flash;
     }
@@ -29,9 +26,9 @@ class ToggleHack {
     return nullptr;
 }
 
-void ExtraLayer::showDEATHS() {
-    showInfo(ExtraLayerInfo::InfoType::DEATHS);
-  }
+void NoclipOptionsLayer::onNoclipTintOptions(CCObject* sender) {
+    NoclipTintOptionsLayer::create(this);
+}
 
 bool NoclipOptionsLayer::init(CCLayer* referrer) {
     if (!CCBlockLayer::init()) {
@@ -39,7 +36,6 @@ bool NoclipOptionsLayer::init(CCLayer* referrer) {
     }
 
     cocos2d::CCUserDefault *def = cocos2d::CCUserDefault::sharedUserDefault();
-    ExtraLayer::m_deaths = def->getBoolForKey("noclipdeaths", false);
   ExtraLayer::m_flash = def->getBoolForKey("noclipflash", false);
 
     CCNode* leftParent = CCNode::create();
@@ -87,79 +83,31 @@ auto titleLabel = CCLabelBMFont::create(
 
   noclipButton->setScale(0.8f);
   menu1->addChild(noclipButton);
-
-  auto toggleOffSprite2 = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
-  auto toggleOnSprite2 = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
-  
-  auto itemOff2 = CCMenuItemSprite::create(toggleOffSprite2, toggleOffSprite2, nullptr, nullptr);
-auto itemOn2 = CCMenuItemSprite::create(toggleOnSprite2,  toggleOnSprite2,  nullptr, nullptr);
-
-auto deaths = ExtraLayer::m_deaths;
-  auto DEATHSButton = CCMenuItemToggler::create(
-    getMenuToggleSpritee(itemOn2, itemOff2, deaths),
-    getMenuToggleSpritee(itemOff2, itemOn2, deaths),  
-    this, 
-    menu_selector(ToggleHack::toggleDeaths) 
-);
-
-  auto menu2 = CCMenu::create();
-   auto counterLabel2 = CCLabelBMFont::create(
-            CCString::createWithFormat("NoClip Deaths")->getCString(), 
-            "bigFont.fnt"
-        );
-        counterLabel2->setScale(0.5f);
-        auto labelMenuItem2 = CCMenuItemLabel::create(
-    counterLabel2, 
-    this, 
-    menu_selector(ExtraLayer::showDEATHS) 
-);
-  DEATHSButton->setScale(0.8f);
-  menu2->addChild(DEATHSButton);
-  menu2->addChild(labelMenuItem2);
-
-  menu2->alignItemsHorizontally();
-
-  auto toggleOffSprite3 = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
-  auto toggleOnSprite3 = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
-
-  auto itemOff3 = CCMenuItemSprite::create(toggleOffSprite3, toggleOffSprite3, nullptr, nullptr);
-auto itemOn3 = CCMenuItemSprite::create(toggleOnSprite3,  toggleOnSprite3,  nullptr, nullptr);
-
-auto flash = ExtraLayer::m_flash;
-  auto FLASHButton = CCMenuItemToggler::create(
-    getMenuToggleSpritee(itemOn3, itemOff3, flash),
-    getMenuToggleSpritee(itemOff3, itemOn3, flash),  
-    this, 
-    menu_selector(ToggleHack::toggleFlash) 
-);
-
-  auto menu3 = CCMenu::create();
-   auto counterLabel3 = CCLabelBMFont::create(
-            CCString::createWithFormat("NoClip Flash")->getCString(), 
-            "bigFont.fnt"
-        );
-        counterLabel3->setScale(0.5f);
-        auto labelMenuItem3 = CCMenuItemLabel::create(
-    counterLabel3, 
-    this, 
-    menu_selector(ExtraLayer::showFLASH) 
-);
-  FLASHButton->setScale(0.8f);
-  menu3->addChild(FLASHButton);
-  menu3->addChild(labelMenuItem3);
-
-  menu3->alignItemsHorizontally();
-
   menu1->setPosition({win_size.width / 2, 20});
-  menu2->setPosition({win_size.width / 2 + 10, win_size.height / 2 + 50});
-  menu3->setPosition({win_size.width / 2, win_size.height / 2});
 
-  labelMenuItem2->setPosition(12.5, 7);
-  labelMenuItem3->setPosition(12.5, 7);
+  auto exportBtnSprite = ButtonSprite::create(
+    "Set Tint Color", 100, 0, 1, false, "goldFont.fnt", "GJ_button_01-hd.png"
+  );
+  
+  auto exportBtn = CCMenuItemSpriteExtra::create(
+    exportBtnSprite,
+    exportBtnSprite,
+    this,
+    menu_selector(NoclipOptionsLayer::onNoclipTintOptions)
+  );
+
+auto exportMenu = CCMenu::create();
+exportMenu->addChild(exportBtn);
+exportMenu->setAnchorPoint({0, 0.5f});
+exportMenu->setPosition(ccp(win_size.width / 4 + 20, win_size.height / 2));
+
+  ExtraLayer* refExtra = dynamic_cast<ExtraLayer*>(referrer);
+  auto flashBtn = refExtra->optionToggler("Noclip Tint", &ExtraLayer::m_flash, true, ExtraLayerInfo::InfoType::FLASH);
+  flashBtn->setPosition(win_size.width / 4 + 20, win_size.height - 100);
 
   mainLayoutLayer->addChild(menu1);
-  mainLayoutLayer->addChild(menu2);
-  mainLayoutLayer->addChild(menu3);
+  mainLayoutLayer->addChild(flashBtn);
+  // mainLayoutLayer->addChild(exportMenu);
   this->addChild(mainLayoutLayer);
   this->setKeypadEnabled(true);
 
@@ -169,7 +117,6 @@ auto flash = ExtraLayer::m_flash;
  void NoclipOptionsLayer::onClose(CCObject* sender) {
     if (sender) this->retain();
     cocos2d::CCUserDefault *def = cocos2d::CCUserDefault::sharedUserDefault();
-    def->setBoolForKey("noclipdeaths", ExtraLayer::m_deaths);
     def->setBoolForKey("noclipflash", ExtraLayer::m_flash);
     def->flush();
     this->setKeypadEnabled(false);

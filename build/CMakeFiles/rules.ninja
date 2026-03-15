@@ -17,7 +17,7 @@
 rule CXX_COMPILER__violet_unscanned_
   depfile = $DEP_FILE
   deps = gcc
-  command = ${LAUNCHER}${CODE_CHECK}C:\Users\Luciano\Downloads\ndk\android-ndk-r17c\toolchains\llvm\prebuilt\windows-x86_64\bin\clang++.exe --target=armv7-none-linux-androideabi --gcc-toolchain=C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64 --sysroot=C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/sysroot $DEFINES $INCLUDES $FLAGS -MD -MT $out -MF $DEP_FILE -o $out -c $in
+  command = ${LAUNCHER}${CODE_CHECK}C:\Users\Usuario\Downloads\ndk\android-ndk-r16b\toolchains\llvm\prebuilt\windows-x86_64\bin\clang++.exe --target=armv7-none-linux-androideabi --gcc-toolchain=C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64 --sysroot=C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/sysroot $DEFINES $INCLUDES $FLAGS -MD -MT $out -MF $DEP_FILE -o $out -c $in
   description = Building CXX object $out
 
 
@@ -25,7 +25,7 @@ rule CXX_COMPILER__violet_unscanned_
 # Rule for linking CXX shared library.
 
 rule CXX_SHARED_LIBRARY_LINKER__violet_
-  command = C:\WINDOWS\system32\cmd.exe /C "$PRE_LINK && C:\Users\Luciano\Downloads\ndk\android-ndk-r17c\toolchains\llvm\prebuilt\windows-x86_64\bin\clang++.exe --target=armv7-none-linux-androideabi --gcc-toolchain=C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64 --sysroot=C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/sysroot -fPIC $LANGUAGE_COMPILE_FLAGS $ARCH_FLAGS $LINK_FLAGS $SONAME_FLAG$SONAME -o $TARGET_FILE $in $LINK_PATH $LINK_LIBRARIES && $POST_BUILD"
+  command = C:\WINDOWS\system32\cmd.exe /C "$PRE_LINK && C:\Users\Usuario\Downloads\ndk\android-ndk-r16b\toolchains\llvm\prebuilt\windows-x86_64\bin\clang++.exe --target=armv7-none-linux-androideabi --gcc-toolchain=C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64 --sysroot=C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/sysroot -fPIC $LANGUAGE_COMPILE_FLAGS $ARCH_FLAGS $LINK_FLAGS $SONAME_FLAG$SONAME -o $TARGET_FILE $in $LINK_PATH $LINK_LIBRARIES && $POST_BUILD"
   description = Linking CXX shared library $TARGET_FILE
   restat = $RESTAT
 
@@ -44,7 +44,7 @@ rule CUSTOM_COMMAND
 rule C_COMPILER__dobby_unscanned_
   depfile = $DEP_FILE
   deps = gcc
-  command = ${LAUNCHER}${CODE_CHECK}C:\Users\Luciano\Downloads\ndk\android-ndk-r17c\toolchains\llvm\prebuilt\windows-x86_64\bin\clang.exe --target=armv7-none-linux-androideabi --gcc-toolchain=C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64 --sysroot=C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/sysroot $DEFINES $INCLUDES $FLAGS -MD -MT $out -MF $DEP_FILE -o $out -c $in
+  command = ${LAUNCHER}${CODE_CHECK}C:\Users\Usuario\Downloads\ndk\android-ndk-r16b\toolchains\llvm\prebuilt\windows-x86_64\bin\clang.exe --target=armv7-none-linux-androideabi --gcc-toolchain=C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64 --sysroot=C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/sysroot $DEFINES $INCLUDES $FLAGS -MD -MT $out -MF $DEP_FILE -o $out -c $in
   description = Building C object $out
 
 
@@ -54,7 +54,7 @@ rule C_COMPILER__dobby_unscanned_
 rule CXX_COMPILER__dobby_unscanned_
   depfile = $DEP_FILE
   deps = gcc
-  command = ${LAUNCHER}${CODE_CHECK}C:\Users\Luciano\Downloads\ndk\android-ndk-r17c\toolchains\llvm\prebuilt\windows-x86_64\bin\clang++.exe --target=armv7-none-linux-androideabi --gcc-toolchain=C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64 --sysroot=C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/sysroot $DEFINES $INCLUDES $FLAGS -MD -MT $out -MF $DEP_FILE -o $out -c $in
+  command = ${LAUNCHER}${CODE_CHECK}C:\Users\Usuario\Downloads\ndk\android-ndk-r16b\toolchains\llvm\prebuilt\windows-x86_64\bin\clang++.exe --target=armv7-none-linux-androideabi --gcc-toolchain=C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64 --sysroot=C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/sysroot $DEFINES $INCLUDES $FLAGS -MD -MT $out -MF $DEP_FILE -o $out -c $in
   description = Building CXX object $out
 
 
@@ -62,7 +62,7 @@ rule CXX_COMPILER__dobby_unscanned_
 # Rule for linking CXX static library.
 
 rule CXX_STATIC_LIBRARY_LINKER__dobby_
-  command = C:\WINDOWS\system32\cmd.exe /C "$PRE_LINK && "C:\Program Files\CMake\bin\cmake.exe" -E rm -f $TARGET_FILE && C:\Users\Luciano\Downloads\ndk\android-ndk-r17c\toolchains\arm-linux-androideabi-4.9\prebuilt\windows-x86_64\bin\arm-linux-androideabi-ar.exe qc $TARGET_FILE $LINK_FLAGS $in && C:\Users\Luciano\Downloads\ndk\android-ndk-r17c\toolchains\arm-linux-androideabi-4.9\prebuilt\windows-x86_64\bin\arm-linux-androideabi-ranlib.exe $TARGET_FILE && $POST_BUILD"
+  command = C:\WINDOWS\system32\cmd.exe /C "$PRE_LINK && "C:\Program Files\CMake\bin\cmake.exe" -E rm -f $TARGET_FILE && C:\Users\Usuario\Downloads\ndk\android-ndk-r16b\toolchains\arm-linux-androideabi-4.9\prebuilt\windows-x86_64\bin\arm-linux-androideabi-ar.exe qc $TARGET_FILE $LINK_FLAGS $in && C:\Users\Usuario\Downloads\ndk\android-ndk-r16b\toolchains\arm-linux-androideabi-4.9\prebuilt\windows-x86_64\bin\arm-linux-androideabi-ranlib.exe $TARGET_FILE && $POST_BUILD"
   description = Linking CXX static library $TARGET_FILE
   restat = $RESTAT
 
@@ -73,7 +73,7 @@ rule CXX_STATIC_LIBRARY_LINKER__dobby_
 rule C_COMPILER__logging_unscanned_
   depfile = $DEP_FILE
   deps = gcc
-  command = ${LAUNCHER}${CODE_CHECK}C:\Users\Luciano\Downloads\ndk\android-ndk-r17c\toolchains\llvm\prebuilt\windows-x86_64\bin\clang.exe --target=armv7-none-linux-androideabi --gcc-toolchain=C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64 --sysroot=C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/sysroot $DEFINES $INCLUDES $FLAGS -MD -MT $out -MF $DEP_FILE -o $out -c $in
+  command = ${LAUNCHER}${CODE_CHECK}C:\Users\Usuario\Downloads\ndk\android-ndk-r16b\toolchains\llvm\prebuilt\windows-x86_64\bin\clang.exe --target=armv7-none-linux-androideabi --gcc-toolchain=C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64 --sysroot=C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/sysroot $DEFINES $INCLUDES $FLAGS -MD -MT $out -MF $DEP_FILE -o $out -c $in
   description = Building C object $out
 
 
@@ -83,7 +83,7 @@ rule C_COMPILER__logging_unscanned_
 rule CXX_COMPILER__logging_unscanned_
   depfile = $DEP_FILE
   deps = gcc
-  command = ${LAUNCHER}${CODE_CHECK}C:\Users\Luciano\Downloads\ndk\android-ndk-r17c\toolchains\llvm\prebuilt\windows-x86_64\bin\clang++.exe --target=armv7-none-linux-androideabi --gcc-toolchain=C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64 --sysroot=C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/sysroot $DEFINES $INCLUDES $FLAGS -MD -MT $out -MF $DEP_FILE -o $out -c $in
+  command = ${LAUNCHER}${CODE_CHECK}C:\Users\Usuario\Downloads\ndk\android-ndk-r16b\toolchains\llvm\prebuilt\windows-x86_64\bin\clang++.exe --target=armv7-none-linux-androideabi --gcc-toolchain=C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64 --sysroot=C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/sysroot $DEFINES $INCLUDES $FLAGS -MD -MT $out -MF $DEP_FILE -o $out -c $in
   description = Building CXX object $out
 
 
@@ -91,7 +91,7 @@ rule CXX_COMPILER__logging_unscanned_
 # Rule for linking CXX static library.
 
 rule CXX_STATIC_LIBRARY_LINKER__logging_
-  command = C:\WINDOWS\system32\cmd.exe /C "$PRE_LINK && "C:\Program Files\CMake\bin\cmake.exe" -E rm -f $TARGET_FILE && C:\Users\Luciano\Downloads\ndk\android-ndk-r17c\toolchains\arm-linux-androideabi-4.9\prebuilt\windows-x86_64\bin\arm-linux-androideabi-ar.exe qc $TARGET_FILE $LINK_FLAGS $in && C:\Users\Luciano\Downloads\ndk\android-ndk-r17c\toolchains\arm-linux-androideabi-4.9\prebuilt\windows-x86_64\bin\arm-linux-androideabi-ranlib.exe $TARGET_FILE && $POST_BUILD"
+  command = C:\WINDOWS\system32\cmd.exe /C "$PRE_LINK && "C:\Program Files\CMake\bin\cmake.exe" -E rm -f $TARGET_FILE && C:\Users\Usuario\Downloads\ndk\android-ndk-r16b\toolchains\arm-linux-androideabi-4.9\prebuilt\windows-x86_64\bin\arm-linux-androideabi-ar.exe qc $TARGET_FILE $LINK_FLAGS $in && C:\Users\Usuario\Downloads\ndk\android-ndk-r16b\toolchains\arm-linux-androideabi-4.9\prebuilt\windows-x86_64\bin\arm-linux-androideabi-ranlib.exe $TARGET_FILE && $POST_BUILD"
   description = Linking CXX static library $TARGET_FILE
   restat = $RESTAT
 
@@ -102,7 +102,7 @@ rule CXX_STATIC_LIBRARY_LINKER__logging_
 rule CXX_COMPILER__symbol_resolver_unscanned_
   depfile = $DEP_FILE
   deps = gcc
-  command = ${LAUNCHER}${CODE_CHECK}C:\Users\Luciano\Downloads\ndk\android-ndk-r17c\toolchains\llvm\prebuilt\windows-x86_64\bin\clang++.exe --target=armv7-none-linux-androideabi --gcc-toolchain=C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64 --sysroot=C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/sysroot $DEFINES $INCLUDES $FLAGS -MD -MT $out -MF $DEP_FILE -o $out -c $in
+  command = ${LAUNCHER}${CODE_CHECK}C:\Users\Usuario\Downloads\ndk\android-ndk-r16b\toolchains\llvm\prebuilt\windows-x86_64\bin\clang++.exe --target=armv7-none-linux-androideabi --gcc-toolchain=C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64 --sysroot=C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/sysroot $DEFINES $INCLUDES $FLAGS -MD -MT $out -MF $DEP_FILE -o $out -c $in
   description = Building CXX object $out
 
 
@@ -110,7 +110,7 @@ rule CXX_COMPILER__symbol_resolver_unscanned_
 # Rule for linking CXX static library.
 
 rule CXX_STATIC_LIBRARY_LINKER__symbol_resolver_
-  command = C:\WINDOWS\system32\cmd.exe /C "$PRE_LINK && "C:\Program Files\CMake\bin\cmake.exe" -E rm -f $TARGET_FILE && C:\Users\Luciano\Downloads\ndk\android-ndk-r17c\toolchains\arm-linux-androideabi-4.9\prebuilt\windows-x86_64\bin\arm-linux-androideabi-ar.exe qc $TARGET_FILE $LINK_FLAGS $in && C:\Users\Luciano\Downloads\ndk\android-ndk-r17c\toolchains\arm-linux-androideabi-4.9\prebuilt\windows-x86_64\bin\arm-linux-androideabi-ranlib.exe $TARGET_FILE && $POST_BUILD"
+  command = C:\WINDOWS\system32\cmd.exe /C "$PRE_LINK && "C:\Program Files\CMake\bin\cmake.exe" -E rm -f $TARGET_FILE && C:\Users\Usuario\Downloads\ndk\android-ndk-r16b\toolchains\arm-linux-androideabi-4.9\prebuilt\windows-x86_64\bin\arm-linux-androideabi-ar.exe qc $TARGET_FILE $LINK_FLAGS $in && C:\Users\Usuario\Downloads\ndk\android-ndk-r16b\toolchains\arm-linux-androideabi-4.9\prebuilt\windows-x86_64\bin\arm-linux-androideabi-ranlib.exe $TARGET_FILE && $POST_BUILD"
   description = Linking CXX static library $TARGET_FILE
   restat = $RESTAT
 
@@ -119,7 +119,7 @@ rule CXX_STATIC_LIBRARY_LINKER__symbol_resolver_
 # Rule for re-running cmake.
 
 rule RERUN_CMAKE
-  command = "C:\Program Files\CMake\bin\cmake.exe" --regenerate-during-build -SC:\Users\Luciano\Downloads\cmake-4.1.2\cmake-4.1.2\project -BC:\Users\Luciano\Downloads\cmake-4.1.2\cmake-4.1.2\project\build
+  command = "C:\Program Files\CMake\bin\cmake.exe" --regenerate-during-build -SC:\Users\Usuario\Downloads\cmake-4.1.2\cmake-4.1.2\project -BC:\Users\Usuario\Downloads\cmake-4.1.2\cmake-4.1.2\project\build
   description = Re-running CMake...
   generator = 1
 

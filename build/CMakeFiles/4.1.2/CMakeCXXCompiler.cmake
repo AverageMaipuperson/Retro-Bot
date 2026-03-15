@@ -1,4 +1,4 @@
-set(CMAKE_CXX_COMPILER "C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/toolchains/llvm/prebuilt/windows-x86_64/bin/clang++.exe")
+set(CMAKE_CXX_COMPILER "C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/toolchains/llvm/prebuilt/windows-x86_64/bin/clang++.exe")
 set(CMAKE_CXX_COMPILER_ARG1 "")
 set(CMAKE_CXX_COMPILER_ID "Clang")
 set(CMAKE_CXX_COMPILER_VERSION "3.8")
@@ -25,14 +25,14 @@ set(CMAKE_CXX_COMPILER_ARCHITECTURE_ID "armv7")
 
 
 
-set(CMAKE_AR "C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64/bin/arm-linux-androideabi-ar.exe")
+set(CMAKE_AR "C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64/bin/arm-linux-androideabi-ar.exe")
 set(CMAKE_CXX_COMPILER_AR "CMAKE_CXX_COMPILER_AR-NOTFOUND")
-set(CMAKE_RANLIB "C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64/bin/arm-linux-androideabi-ranlib.exe")
+set(CMAKE_RANLIB "C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64/bin/arm-linux-androideabi-ranlib.exe")
 set(CMAKE_CXX_COMPILER_RANLIB "CMAKE_CXX_COMPILER_RANLIB-NOTFOUND")
-set(CMAKE_LINKER "C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64/bin/arm-linux-androideabi-ld.exe")
+set(CMAKE_LINKER "C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64/bin/arm-linux-androideabi-ld.exe")
 set(CMAKE_LINKER_LINK "")
 set(CMAKE_LINKER_LLD "")
-set(CMAKE_CXX_COMPILER_LINKER "C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64/arm-linux-androideabi/bin/ld")
+set(CMAKE_CXX_COMPILER_LINKER "C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64/arm-linux-androideabi/bin/ld")
 set(CMAKE_CXX_COMPILER_LINKER_ID "GNUgold")
 set(CMAKE_CXX_COMPILER_LINKER_VERSION 1.12)
 set(CMAKE_CXX_COMPILER_LINKER_FRONTEND_VARIANT GNU)
@@ -90,9 +90,9 @@ endif()
 
 
 
-set(CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES "C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/sysroot/usr/include/arm-linux-androideabi;C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/toolchains/llvm/prebuilt/windows-x86_64/lib64/clang/6.0.2/include;C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/sysroot/usr/include")
-set(CMAKE_CXX_IMPLICIT_LINK_LIBRARIES "m;gcc;gcc;dl;c;gcc;gcc;dl")
-set(CMAKE_CXX_IMPLICIT_LINK_DIRECTORIES "C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/sources/cxx-stl/llvm-libc++/libs/armeabi-v7a;C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/toolchains/llvm/prebuilt/windows-x86_64/lib64/clang/6.0.2/lib/linux/arm;C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64/lib/gcc/arm-linux-androideabi/4.9.x/armv7-a/thumb;C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64/arm-linux-androideabi/lib/armv7-a/thumb;C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/platforms/android-14/arch-arm/usr/lib")
+set(CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES "C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/sysroot/usr/include/arm-linux-androideabi;C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/toolchains/llvm/prebuilt/windows-x86_64/lib64/clang/5.0.300080/include;C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/sysroot/usr/include")
+set(CMAKE_CXX_IMPLICIT_LINK_LIBRARIES "stdc++;m;gcc;gcc;dl;c;gcc;gcc;dl")
+set(CMAKE_CXX_IMPLICIT_LINK_DIRECTORIES "C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/toolchains/llvm/prebuilt/windows-x86_64/lib64/clang/5.0.300080/lib/linux/arm;C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64/lib/gcc/arm-linux-androideabi/4.9.x/armv7-a/thumb;C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64/arm-linux-androideabi/lib/armv7-a/thumb;C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/platforms/android-14/arch-arm/usr/lib")
 set(CMAKE_CXX_IMPLICIT_LINK_FRAMEWORK_DIRECTORIES "")
 set(CMAKE_CXX_COMPILER_CLANG_RESOURCE_DIR "")
 

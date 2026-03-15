@@ -153,6 +153,8 @@ public:
     */
     void setResourcePath(const char *pszResourcePath);
 
+	void removeFile(const char*);
+
     /**
     @brief   Get the writeable path
     @return  The path that can write/read file

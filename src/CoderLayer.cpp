@@ -25,6 +25,7 @@
 #include <vector>
 #include <iostream>
 #include <cctype>
+#include "../vendor/other/fallback.h"
 
 USING_NS_CC_EXT; 
 using namespace cocos2d;
@@ -126,7 +127,7 @@ GameStatsManager::reward(type, amount);
 
 void CoderLayer::countUpScore(float dt) {
     oldStarAmount += 1; 
-    std::string scoreString = std::to_string(oldStarAmount);
+    std::string scoreString = patch::to_string(oldStarAmount);
     label->setString(scoreString.c_str(), true);
 
     if (oldStarAmount >= starAmount) {
@@ -262,7 +263,9 @@ char* CoderLayer::randomString() {
       "I'm too tired to talk to you.",
       "I'm not having it.",
       "What are you doing?",
-      "I hate giving you prizes."
+      "I hate giving you prizes.",
+      "Talk with me later.",
+      "Whats the purpose?"
 };
     return const_cast<char*>(randArr[random_array_index(randArr)]);
 }
@@ -421,7 +424,7 @@ void CoderLayer::updateMainLabel() {
         this->reward(6, 10);
         code8 = true;
         def->setBoolForKey("code8", code8);
-    } else if(strcmp(cctolower(userInputCStr), VCustomEncrypt::ce_decode("G@GCGFFIFvFsFEGD").c_str()) == 0 && code9 == false) { // plsstars
+    } else if(strcmp(cctolower(userInputCStr), VCustomEncrypt::ce_decode("G@FsGCGCGDFAGBGC").c_str()) == 0 && code9 == false) { // plsstars
         cocos2d::CCUserDefault *def = cocos2d::CCUserDefault::sharedUserDefault();
         auto sharedengine = CocosDenshion::SimpleAudioEngine::sharedEngine();
         sharedengine->playEffect("highscoreGet02.ogg", false);
@@ -431,17 +434,7 @@ void CoderLayer::updateMainLabel() {
         this->reward(6, 10);
         code9 = true;
         def->setBoolForKey("code9", code9);
-        } else if(strcmp(cctolower(userInputCStr), VCustomEncrypt::ce_decode("FDFEFCFEFtFBFEGB").c_str()) == 0 && code10 == false) { // coinislife
-        cocos2d::CCUserDefault *def = cocos2d::CCUserDefault::sharedUserDefault();
-        auto sharedengine = CocosDenshion::SimpleAudioEngine::sharedEngine();
-        sharedengine->playEffect("highscoreGet02.ogg", false);
-        mainTitle->setString("It definitively is, i am one myself, in fact.");
-        mainTitle->setColor(ccc3(189, 97, 242));
-        this->showStarAnimation(25);
-        this->reward(6, 25);
-        code10 = true;
-        def->setBoolForKey("code10", code10);
-   } else CoderLayer::updateLabel(mainTitle);
+     } else CoderLayer::updateLabel(mainTitle);
    globalInput->setString("");
 }
 
@@ -464,8 +457,8 @@ bool CoderLayer::init(CCLayer* self) {
     code6 = def->getBoolForKey("code6", false);
     code7 = def->getBoolForKey("code7", false);
     code8 = def->getBoolForKey("code8", false);
-    code7 = def->getBoolForKey("code9", false);
-    code8 = def->getBoolForKey("code19", false);
+    code9 = def->getBoolForKey("code9", false);
+    code10 = def->getBoolForKey("code10", false);
     CocosDenshion::SimpleAudioEngine::sharedEngine()->preloadEffect("highscoreGet02.ogg");
     auto director = CCDirector::sharedDirector();
     auto win_size = director->getWinSize();
@@ -507,23 +500,12 @@ bool CoderLayer::init(CCLayer* self) {
     // textInput->setAllowedChars("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,+-/!?");
     textInput->setAnchorPoint({0, 0.5});
    CCSpriteFrameCache::sharedSpriteFrameCache()->addSpriteFramesWithFile("vaultAnimation-hd.plist");
-
-// Using a SpriteBatchNode is efficient but complex with buttons. 
-// For simplicity with buttons, we often use regular CCSprites added to the main layer.
-// If you MUST use a batch node, the button setup gets slightly more complex. 
-// Let's stick to simple CCSprites for the button example:
-
-// --- 2. Create the Animated Sprite (Normal State Visual) ---
-// This sprite will run the animation continuously in the background
 CCSprite* animatedSprite = CCSprite::createWithSpriteFrameName("vault001.png");
 
-// CRITICAL CHECK: Make sure the sprite loaded correctly
 if (animatedSprite == nullptr) {
     CCLOGERROR("Failed to create animatedSprite. Check plist/png files.");
     return false; 
 }
-
-// --- 3. Set up the Animation Action (Same as before) ---
 CCArray* animFrames = CCArray::arrayWithCapacity(4);
 char str[100] = {0};
 for (int i = 1; i <= 4; i++)
@@ -536,40 +518,24 @@ for (int i = 1; i <= 4; i++)
 CCAnimation* animation = CCAnimation::create(animFrames, 0.1f);
 CCAnimate* animate = CCAnimate::create(animation);
 CCActionInterval* repeatAction = CCRepeatForever::create(animate);
-
-// --- 4. Run the animation on the sprite ---
 animatedSprite->runAction(repeatAction);
-
-
-// --- 5. Create the Menu Item using the Animated Sprite ---
-// The menu item uses the animatedSprite as its visual representation (Normal State).
-// We pass NULL for the selected and disabled states for simplicity here.
-
 CCPoint desiredPosition = ccp(win_size.width / 2, win_size.height / 2 - 10);
 
 CCMenuItemSprite* vaultMenuItem = CCMenuItemSprite::create(
-    animatedSprite,  // Normal sprite (which is animating!)
-    NULL,            // Selected sprite (optional)
-    NULL,            // Disabled sprite (optional)
-    this,            // Target object (the layer)
-    menu_selector(CoderLayer::updateMainLabel) // Function to call when clicked
+    animatedSprite,
+    NULL,
+    NULL,
+    this,
+    menu_selector(CoderLayer::updateMainLabel)
 );
 
-// Optional: Position the menu item
 vaultMenuItem->setPosition(ccp(
     roundf(desiredPosition.x), 
     roundf(desiredPosition.y)
 ));
 vaultMenuItem->setScale(0.15f);
-
-
-// --- 6. Create the Menu Container ---
-// A CCMenu is required to make the menu items clickable.
 CCMenu* menu = CCMenu::create(vaultMenuItem, NULL);
-menu->setPosition(CCPointZero); // Position the menu itself at the bottom-left
-
-
-// --- 7. Add the Menu to your Layer ---
+menu->setPosition(CCPointZero);
 this->addChild(menu);
 
     

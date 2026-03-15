@@ -7,6 +7,8 @@
 #include <vector>
 #include <stdexcept>
 #include <iomanip>
+#include <algorithm>
+#include "../vendor/other/fallback.h"
 
 std::string VCustomEncrypt::ce_encode(std::string input) {
      std::stringstream hex_encoded;
@@ -37,7 +39,7 @@ std::string VCustomEncrypt::ce_decode(const std::string& shifted_hex_input) {
 
     for (size_t i = 0; i < unshifted_hex.length(); i += 2) {
         std::string byteString = unshifted_hex.substr(i, 2);
-        char byte = static_cast<char>(std::stoul(byteString, nullptr, 16));
+        char byte = static_cast<char>(patch::stoul(byteString, nullptr, 16));
         result.push_back(byte);
     }
     return result;

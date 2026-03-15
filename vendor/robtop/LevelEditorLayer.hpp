@@ -4,6 +4,13 @@
 #include <cocos2d.h>
 #include "GameObject.hpp"
 
+struct OrderingData
+{
+    int order_of_arrival;
+    int z_order;
+};
+
+
 class DrawGridLayer : public cocos2d::CCLayer
 {
 public:
@@ -11,6 +18,7 @@ public:
     virtual void draw();
     void addToEffects(GameObject*);
     void removeFromEffects(GameObject*);
+	virtual void update(float dt);
 };
 class GJGameLevel;
 
@@ -37,11 +45,12 @@ public:
     virtual UndoCommand getCommand();
 };
 
+/*
 class LevelSettingsObject : public CCObject
 {
 public:
     static LevelSettingsObject* objectFromString(std::string);
-};
+}; */
 
 using namespace cocos2d;
 
@@ -57,7 +66,7 @@ public:
     int m_nObjectCount;
     CCLayer *m_pLayer;
     GJGameLevel *m_pLevel;
-    LevelSettingsObject *m_pLevelSettings;
+    void* m_pLevelSettings;
     unsigned int m_nDistance;
 
     static LevelEditorLayer* create(GJGameLevel*);
@@ -79,6 +88,7 @@ public:
     void addToUndoList(UndoObject* obj);
     void removeObjectFromSection(GameObject* obj);
     void removeObject(GameObject* obj);
+    GameObject* objectAtPosition(CCPoint);
 };
 
 #endif

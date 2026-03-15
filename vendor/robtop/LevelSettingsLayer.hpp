@@ -2,5 +2,7 @@
 
 class LevelSettingsLayer : public cocos2d::CCLayer {
 public:
-static onSettings(LevelSettingsLayer*);
-}
+static LevelSettingsLayer* create();
+void onCustomSongs(CCObject* pSender);
+void onClose();
+};

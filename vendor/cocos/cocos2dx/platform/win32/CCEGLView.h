@@ -48,6 +48,7 @@ public:
     virtual void setContentScaleFactor(float contentScaleFactor);
     virtual void setFrameSize(float width, float height);
     virtual void setIMEKeyboardState(bool bOpen);
+	virtual CCSize* getScale();
 
 private:
     virtual bool Create(LPCTSTR pTitle, int w, int h);

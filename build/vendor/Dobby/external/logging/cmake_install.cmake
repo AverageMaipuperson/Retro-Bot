@@ -1,4 +1,4 @@
-# Install script for directory: C:/Users/Luciano/Downloads/cmake-4.1.2/cmake-4.1.2/project/vendor/Dobby/external/logging
+# Install script for directory: C:/Users/Usuario/Downloads/cmake-4.1.2/cmake-4.1.2/project/vendor/Dobby/external/logging
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -39,12 +39,12 @@ endif()
 
 # Set path to fallback-tool for dependency-resolution.
 if(NOT DEFINED CMAKE_OBJDUMP)
-  set(CMAKE_OBJDUMP "C:/Users/Luciano/Downloads/ndk/android-ndk-r17c/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64/bin/arm-linux-androideabi-objdump.exe")
+  set(CMAKE_OBJDUMP "C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64/bin/arm-linux-androideabi-objdump.exe")
 endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
 if(CMAKE_INSTALL_LOCAL_ONLY)
-  file(WRITE "C:/Users/Luciano/Downloads/cmake-4.1.2/cmake-4.1.2/project/build/vendor/Dobby/external/logging/install_local_manifest.txt"
+  file(WRITE "C:/Users/Usuario/Downloads/cmake-4.1.2/cmake-4.1.2/project/build/vendor/Dobby/external/logging/install_local_manifest.txt"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
 endif()
