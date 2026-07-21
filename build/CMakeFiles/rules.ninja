@@ -6,7 +6,7 @@
 # It is included in the main 'build.ninja'.
 
 # =============================================================================
-# Project: violet
+# Project: rbot
 # Configurations: 
 # =============================================================================
 # =============================================================================
@@ -14,7 +14,7 @@
 #############################################
 # Rule for compiling CXX files.
 
-rule CXX_COMPILER__violet_unscanned_
+rule CXX_COMPILER__rbot_unscanned_
   depfile = $DEP_FILE
   deps = gcc
   command = ${LAUNCHER}${CODE_CHECK}C:\Users\Usuario\Downloads\ndk\android-ndk-r16b\toolchains\llvm\prebuilt\windows-x86_64\bin\clang++.exe --target=armv7-none-linux-androideabi --gcc-toolchain=C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64 --sysroot=C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/sysroot $DEFINES $INCLUDES $FLAGS -MD -MT $out -MF $DEP_FILE -o $out -c $in
@@ -24,7 +24,7 @@ rule CXX_COMPILER__violet_unscanned_
 #############################################
 # Rule for linking CXX shared library.
 
-rule CXX_SHARED_LIBRARY_LINKER__violet_
+rule CXX_SHARED_LIBRARY_LINKER__rbot_
   command = C:\WINDOWS\system32\cmd.exe /C "$PRE_LINK && C:\Users\Usuario\Downloads\ndk\android-ndk-r16b\toolchains\llvm\prebuilt\windows-x86_64\bin\clang++.exe --target=armv7-none-linux-androideabi --gcc-toolchain=C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/toolchains/arm-linux-androideabi-4.9/prebuilt/windows-x86_64 --sysroot=C:/Users/Usuario/Downloads/ndk/android-ndk-r16b/sysroot -fPIC $LANGUAGE_COMPILE_FLAGS $ARCH_FLAGS $LINK_FLAGS $SONAME_FLAG$SONAME -o $TARGET_FILE $in $LINK_PATH $LINK_LIBRARIES && $POST_BUILD"
   description = Linking CXX shared library $TARGET_FILE
   restat = $RESTAT
@@ -119,8 +119,17 @@ rule CXX_STATIC_LIBRARY_LINKER__symbol_resolver_
 # Rule for re-running cmake.
 
 rule RERUN_CMAKE
-  command = "C:\Program Files\CMake\bin\cmake.exe" --regenerate-during-build -SC:\Users\Usuario\Downloads\cmake-4.1.2\cmake-4.1.2\project -BC:\Users\Usuario\Downloads\cmake-4.1.2\cmake-4.1.2\project\build
+  command = "C:\Program Files\CMake\bin\cmake.exe" --regenerate-during-build -SC:\Users\Usuario\Downloads\cmake-4.1.2\cmake-4.1.2\rbot -BC:\Users\Usuario\Downloads\cmake-4.1.2\cmake-4.1.2\rbot\build
   description = Re-running CMake...
+  generator = 1
+
+
+#############################################
+# Rule for re-checking globbed directories.
+
+rule VERIFY_GLOBS
+  command = "C:\Program Files\CMake\bin\cmake.exe" -P C:\Users\Usuario\Downloads\cmake-4.1.2\cmake-4.1.2\rbot\build\CMakeFiles\VerifyGlobs.cmake
+  description = Re-checking globbed directories...
   generator = 1
 
 
