@@ -127,6 +127,15 @@ namespace mod
             true
         );
 
+        mod::module<bool>(
+            id::disable_mirror_portals,
+            category::menu,
+            "Disable Mirror Portals",
+            "Prevents the level from flipping, this is a temporary fix to a fatal bug so turn this option on if you have issues botting a level with mirror portals.",
+            true,
+            true
+        );
+
         patch_init();
     }
 }

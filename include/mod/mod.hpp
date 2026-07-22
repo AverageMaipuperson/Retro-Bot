@@ -11,7 +11,8 @@ enum id
     playback_label,
     speedhack_val,
     update_on_steps,
-    show_hitboxes
+    show_hitboxes,
+    disable_mirror_portals
 };
 
 enum category

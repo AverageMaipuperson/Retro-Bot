@@ -257,6 +257,12 @@ void PlayLayer_visit_H(PlayLayer* self)
     }
 }
 
+void (*PlayLayer_toggleFlipped)(PlayLayer*, bool, bool);
+void PlayLayer_toggleFlipped_H(PlayLayer* self, bool direction, bool doFlip)
+{
+    if(!mod::module_by_id<bool>(id::disable_mirror_portals)) PlayLayer_toggleFlipped(self, direction, doFlip);
+}
+
 void bot_hook()
 {
     #if GAME_VERSION == V1P8
@@ -264,6 +270,7 @@ void bot_hook()
     #else
     HOOK("_ZN9PlayLayer4initEP11GJGameLevel", PlayLayer_init_H, PlayLayer_init);
     #endif
+    HOOK("_ZN9PlayLayer13toggleFlippedEbb", PlayLayer_toggleFlipped_H, PlayLayer_toggleFlipped);
     HOOK("_ZN7cocos2d11CCScheduler6updateEf", CCScheduler_update_H, CCScheduler_update);
     HOOK("_ZN9PlayLayer18loadLastCheckpointEv", PlayLayer_loadLastCheckpoint_H, PlayLayer_loadLastCheckpoint);
     HOOK("_ZN9PlayLayer20removeLastCheckpointEv", PlayLayer_removeLastCheckpoint_H, PlayLayer_removeLastCheckpoint);

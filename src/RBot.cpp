@@ -20,7 +20,7 @@ using namespace cocos2d;
 
 std::string RBot::getVersion()
 {
-    return "0.9 beta";
+    return "0.91 beta";
 }
 
 bool compareFrames(Action a, Action b)
@@ -455,7 +455,7 @@ bool RBotLayer::init()
     this->m_textInput = CCTextInputNode::create(120, 40, "Speedhack", "Thonburi", 15, "chatFont.fnt");
     MEMBER_BY_OFFSET(void*, m_textInput, 0x16c) = nullptr; 
     MEMBER_BY_OFFSET(cocos2d::CCTextFieldTTF*, this->m_textInput, CCTextInputNode__m_textField)->setOpacity(200);
-    this->m_textInput->setPosition(ccp(winSize.width / 2 + 20, winSize.height / 1.5 - 20));
+    this->m_textInput->setPosition(ccp(winSize.width / 2 + 20, winSize.height / 1.5 - 50));
     this->m_textInput->setMaxLabelScale(1);
     this->m_textInput->setLabelPlaceholderScale(1);
     this->m_textInput->setScale(0.5f);
@@ -502,7 +502,7 @@ bool RBotLayer::init()
         }
     );
 
-    float y = 12.5f * mod_map.size();
+    float y = 15 * mod_map.size();
 
     for(const auto mod : mod_map)
     {
@@ -534,7 +534,7 @@ bool RBotLayer::init()
                 nullptr,
                 "About",
                 fmt::format(
-                "<cy>Retro Bot</c> \n Developed by nano \n \n <cg>Version:</c> {} \n <cp>Special Thanks:</c> AntiMatter, aloaf, hris",
+                "<cy>Retro Bot</c> \n Developed by nano \n \n <cg>Version:</c> {} \n <cp>Special Thanks:</c> AntiMatter, aloaf, hris, Mysph",
                 RBot::getVersion()
                 ).c_str(),
                 "OK",
