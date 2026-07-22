@@ -39,3 +39,4 @@
 ///////////////////////////////////////////////////////
 
 #define pause_restart_button           0x1533BC  // PauseLayer::customSetup
+#define level_flip                     0x1373FE  // PlayLayer::toggleFlipped if(!param_2)

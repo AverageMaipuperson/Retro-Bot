@@ -52,13 +52,10 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
         auto frame = RBot::getFrameData()[index];
 
         getPlayer(self)->setPosition(frame.position);
+        getPlayer(self)->setLastP(frame.position);
+        MEMBER_BY_OFFSET(CCPoint, self, PlayLayer__m_realPosition) = frame.position;
         getPlayer(self)->setRotation(frame.rotation);
         getPlayer(self)->setScaleY(frame.flipY);
-        getPlayer(self)->setLastP(frame.position);
-        // i couldn't find the realPosition CCPoint in PlayLayer
-        #if GAME_VERSION != 10 && GAME_VERSION != 18
-        MEMBER_BY_OFFSET(CCPoint, self, PlayLayer__m_realPosition) = frame.position;
-        #endif
 
         modules.frame = index;
     }
@@ -73,7 +70,11 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
         RBot::getFrameData().push_back({
             modules.time,
             getPlayer(self)->getScaleY(),
+            #if GAME_VERSION > V1P0
             getPlayer(self)->getPosition(), 
+            #else
+            MEMBER_BY_OFFSET(CCPoint, self, PlayLayer__m_realPosition),
+            #endif
             getPlayer(self)->getRotation()
         });
         modules.frame++;

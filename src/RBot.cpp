@@ -180,8 +180,13 @@ void RBotLayer::loadFile()
 
 CCNode* RBotLayer::togglerFromModule(const Module& m)
 {
-    auto off = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
+    #if GAME_VERSION > V1P0
     auto on = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
+    auto off = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
+    #else
+    auto on = CCSprite::create("GJ_checkOn_001.png");
+    auto off = CCSprite::create("GJ_checkOff_001.png");
+    #endif
 
     auto val = mod::module_by_id<bool>(m.id);
 
@@ -189,8 +194,8 @@ CCNode* RBotLayer::togglerFromModule(const Module& m)
 
     // im too lazy to make a CCMenuItemTogglerExtExtra or whatever stay with an annoying bug at the moment
     auto btn = CCMenuItemExt::createWithToggler(
-        getToggleSprite(on, off, val), 
-        getToggleSprite(off, on, val),  
+        off,
+        on,
         [id = m.id](CCObject* toggler)
         {
             bool val = mod::module_by_id<bool>(id);
@@ -200,6 +205,7 @@ CCNode* RBotLayer::togglerFromModule(const Module& m)
             // static_cast<CCMenuItemToggler*>()->toggle(val);
         }
     );
+    if(val) static_cast<CCMenuItemToggler*>(btn->getWrapper())->toggle(true);
 
     btn->setAnchorPoint(ccp(0, 0.5f));
     btn->setScale(0.8f);
@@ -221,7 +227,11 @@ CCNode* RBotLayer::togglerFromModule(const Module& m)
     menu->ignoreAnchorPointForPosition(false);
 
     if(!m.description.empty()) {
+        #if GAME_VERSION > V1P0
         auto spr = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
+        #else
+        auto spr = CCSprite::create("GJ_infoIcon_001.png");
+        #endif
         spr->setScale(0.4f);
         auto infoBtn = CCMenuItemExt::createWithSpriteExtra(
             spr, 
@@ -511,7 +521,12 @@ bool RBotLayer::init()
     m_label->setScale(.5f);
     m_macroPage->addChild(m_label);
 
+    #if GAME_VERSION > V1P0
     spr = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
+    #else
+    spr = CCSprite::create("GJ_infoIcon_001.png");
+    #endif
+
     auto infoBtn = CCMenuItemExt::createWithSpriteExtra(
         spr,
         [this](CCObject*){

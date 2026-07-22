@@ -4,17 +4,18 @@
 
 #define PlayLayer__m_hazards              0x190  // PlayLayer::checkCollisions
 #define PlayLayer__m_isPractice           0x24d  // PlayLayer::getPracticeMode
-#define PlayLayer__m_playerObject         0x1ec  // PlayLayer::getPlayer
+#define PlayLayer__m_playerObject         0x224  // PlayLayer::getPlayer
 #define PlayLayer__m_cameraPos            0x22c  // PlayLayer::getCameraPos
-#define PlayLayer__m_objects              0x188  // PlayLayer::init (first CCArray::create call after setSecondColor)
-#define PlayLayer__m_gameLayer            0x220  // PlayLayer::getGameLayer
+#define PlayLayer__m_realPosition         0x1e8  // PlayLayer::update (first cocos2d::CCPoint::operator= call)
+#define PlayLayer__m_objects              0x18c  // PlayLayer::init (first CCArray::create call after setSecondColor)
+#define PlayLayer__m_gameLayer            0x258  // PlayLayer::getGameLayer
 
 ///////////////////////////////////////////////////////
 /*                    PlayerObject                   */
 ///////////////////////////////////////////////////////
 
-#define PlayerObject__m_gravity           0x380  // PlayerObject::gravityUp
-#define PlayerObject__m_yVelocity         0x368  // PlayerObject::hitGround (first line)
+#define PlayerObject__m_gravity           0x350  // PlayerObject::gravityUp
+#define PlayerObject__m_yVelocity         0x370  // PlayerObject::hitGround (first line)
 
 ///////////////////////////////////////////////////////
 /*                  CCTextInputNode                  */

@@ -9,6 +9,7 @@
 #define PlayLayer__m_cameraPos            0x234  // PlayLayer::getCameraPos
 #define PlayLayer__m_objects              0x184  // PlayLayer::init (first CCArray::create call after setSecondColor)
 #define PlayLayer__m_gameLayer            0x260  // PlayLayer::getGameLayer
+#define PlayLayer__m_isFlipped            0x21c  // PlayLayer::getIsFlipped
 
 ///////////////////////////////////////////////////////
 /*                    PlayerObject                   */
@@ -38,3 +39,4 @@
 ///////////////////////////////////////////////////////
 
 #define pause_restart_button           0x159368  // PauseLayer::customSetup
+#define level_flip                     0x1496EE  // PlayLayer::toggleFlipped if(param_1)
