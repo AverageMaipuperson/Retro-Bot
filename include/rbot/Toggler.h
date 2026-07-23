@@ -19,21 +19,24 @@ CCMenuItemToggler* m_button;
         CC_SAFE_DELETE(pRet);
         return nullptr;
     }
-void modifyText(const char* text) {
+
+    void modifyText(const char* text) {
         m_label->setString(text);
     }
-void toggle(bool state) {
-    *m_opt = state;
-  m_button->toggle(state);  
-}
-void setSelected(bool on) {
-    if (m_button) {
-        m_button->toggle(on);
+    
+    void toggle(bool state) {
+        *m_opt = state;
+        m_button->toggle(state);  
     }
-    if (m_opt) {
-        *m_opt = on;
+
+    void setSelected(bool on) {
+        if (m_button) {
+            m_button->toggle(on);
+        }
+        if (m_opt) {
+            *m_opt = on;
+        }
     }
-}
 
 private:
     bool init(const char* text, bool* var, CCObject* target, SEL_MenuHandler selector, int tag);

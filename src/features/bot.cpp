@@ -56,7 +56,8 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
         MEMBER_BY_OFFSET(CCPoint, self, PlayLayer__m_realPosition) = frame.position;
         getPlayer(self)->setRotation(frame.rotation);
         getPlayer(self)->setScaleY(frame.flipY);
-
+        MEMBER_BY_OFFSET(bool, getPlayer(self), PlayerObject__m_onGround) = frame.onGround;
+        
         modules.frame = index;
     }
 
@@ -75,7 +76,8 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
             #else
             MEMBER_BY_OFFSET(CCPoint, self, PlayLayer__m_realPosition),
             #endif
-            getPlayer(self)->getRotation()
+            getPlayer(self)->getRotation(),
+            MEMBER_BY_OFFSET(bool, getPlayer(self), PlayerObject__m_onGround)
         });
         modules.frame++;
     }
@@ -131,7 +133,8 @@ void PlayerObject_updateJump_H(PlayerObject* self, float dt)
     if(RBot::getModules().mode != Modes::kModePlaying) PlayerObject_updateJump(self, dt);
     else
     {
-        // fix particles. after first release
+        if(self->getPositionY() <= 105) self->hitGround(true);
+        else self->hitGround(false);
     }
 }
 

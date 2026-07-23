@@ -68,6 +68,10 @@ public:
 
     CCMenuItem* getWrapper() const;
 
+    void setTarget(const Callback& callback);
+
+    Callback& getTarget();
+
 protected:
     bool init(CCMenuItem*, const Callback&);
 

@@ -15,4 +15,5 @@ public:
     
     void setSizeMult(float);
     void toggle(bool);
+    bool getIsActive() const;
 };

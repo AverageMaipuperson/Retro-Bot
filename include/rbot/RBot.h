@@ -28,6 +28,7 @@ struct Frame {
     float flipY;
     CCPoint position;
     float rotation;
+    bool onGround;
     bool operator==(const Frame& other) const {
         return this->frame == other.frame;
     }
@@ -99,5 +100,6 @@ public:
     void loadFile();
     CCNode* togglerFromModule(const Module&);
     void updateLabel();
+    CCNode* createToggler(const char* text, bool* var, CCObject* target, SEL_MenuHandler callback, int tag);
     virtual void FLAlert_Clicked(FLAlertLayer*, bool) override;
 };

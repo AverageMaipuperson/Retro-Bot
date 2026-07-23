@@ -147,3 +147,13 @@ void CCMenuItemExt::callback(CCObject* sender)
     if (_callback) _callback(sender);
     if(auto toggler = dynamic_cast<CCMenuItemToggler*>(_wrap)) toggler->toggle(!toggler->m_toggled);
 }
+
+CCMenuItemExt::Callback& CCMenuItemExt::getTarget()
+{
+    return _callback;
+}
+
+void CCMenuItemExt::setTarget(const Callback& callback)
+{
+    _callback = callback;
+}

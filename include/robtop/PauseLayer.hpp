@@ -2,6 +2,7 @@
 
 #include <cocos2dcpp.h>
 #include "FLAlertLayer.hpp"
+using namespace cocos2d;
 
 #if GAME_VERSION == 18
 class PauseLayer : public cocos2d::CCLayer, public FLAlertLayerProtocol {

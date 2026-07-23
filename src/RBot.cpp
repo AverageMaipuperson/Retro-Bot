@@ -20,7 +20,7 @@ using namespace cocos2d;
 
 std::string RBot::getVersion()
 {
-    return "0.91 beta";
+    return "0.911 beta";
 }
 
 bool compareFrames(Action a, Action b)
@@ -128,6 +128,11 @@ RBotLayer* RBotLayer::create(PauseLayer* parent)
     return nullptr;
 }
 
+CCMenuItemToggler* getToggler(CCNode* node)
+{
+    return static_cast<CCMenuItemToggler*>(static_cast<CCMenu*>(node->getChildren()->objectAtIndex(0))->getChildren()->objectAtIndex(0));
+}
+
 void RBotLayer::toggle(CCObject* sender)
 {
     auto btn = static_cast<CCMenuItemToggler*>(sender);
@@ -136,9 +141,11 @@ void RBotLayer::toggle(CCObject* sender)
     switch(btn->getTag())
     {
         case 1000: 
+            // getToggler(m_playToggler)->toggle(false);
             m_playToggler->toggle(false);
             break;
         case 1001:
+            // getToggler(m_recordToggler)->toggle(false);
             m_recordToggler->toggle(false);
             break;
         case MACRO_TAG:
@@ -207,6 +214,16 @@ CCNode* RBotLayer::togglerFromModule(const Module& m)
     );
     if(val) static_cast<CCMenuItemToggler*>(btn->getWrapper())->toggle(true);
 
+    auto target = btn->getTarget();
+    auto wrapper = btn->getWrapper();
+    btn->setTarget(
+        [target, wrapper, id = m.id](CCObject* self)
+        {
+            target(self);
+            static_cast<CCMenuItemToggler*>(wrapper)->toggle(mod::module_by_id<bool>(id));
+        }
+    );
+
     btn->setAnchorPoint(ccp(0, 0.5f));
     btn->setScale(0.8f);
 
@@ -227,11 +244,7 @@ CCNode* RBotLayer::togglerFromModule(const Module& m)
     menu->ignoreAnchorPointForPosition(false);
 
     if(!m.description.empty()) {
-        #if GAME_VERSION > V1P0
         auto spr = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
-        #else
-        auto spr = CCSprite::create("GJ_infoIcon_001.png");
-        #endif
         spr->setScale(0.4f);
         auto infoBtn = CCMenuItemExt::createWithSpriteExtra(
             spr, 
@@ -251,6 +264,41 @@ CCNode* RBotLayer::togglerFromModule(const Module& m)
         menu->addChild(infoBtn);
     }
     return container;
+}
+
+CCNode* RBotLayer::createToggler(const char* text, bool* var, CCObject* target, SEL_MenuHandler callback, int tag)
+{
+    auto node = CCNode::create();
+
+    #if GAME_VERSION > V1P0
+    auto on = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
+    auto off = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
+    #else
+    auto on = CCSprite::create("GJ_checkOn_001.png");
+    auto off = CCSprite::create("GJ_checkOff_001.png");
+    #endif
+    
+    auto button = CCMenuItemToggler::create(off, on, target, callback);
+    button->setTag(tag);
+    button->setUserData(var);
+
+    auto menu = CCMenu::create(button, NULL);
+    menu->setPosition(CCPointZero);
+
+    if (var && *var) button->toggle(true);
+
+    auto label = CCLabelBMFont::create(text, "bigFont.fnt");
+    float width = label->getContentSize().width;
+    label->setAnchorPoint(ccp(0.5, 0.5));
+    if (width > 55.f) label->setScale(55.f / width);
+    else label->setScale(0.25f);
+
+    node->addChild(menu);
+    node->addChild(label);
+    
+    label->setPosition(ccp(50, 0));
+
+    return node;
 }
 
 bool RBotLayer::init()
@@ -302,15 +350,19 @@ bool RBotLayer::init()
     menu->addChild(btn);
     contentHolder->addChild(menu, 100);
 
+    auto macroMenu = CCMenu::create();
+    macroMenu->setPosition(CCPointZero);
+    m_macroPage->addChild(macroMenu);
+
     auto recordToggler = Toggler::create("Record", &RBot::getModules().recording, this, menu_selector(RBotLayer::toggle), 1000);
     m_recordToggler = recordToggler;
-    recordToggler->setPosition({winSize.width / 2 - 60, winSize.height / 2});
-    m_macroPage->addChild(recordToggler, 100);
+    recordToggler->setPosition(ccp(winSize.width / 2 - 90, winSize.height / 2));
+    m_macroPage->addChild(recordToggler, 100000);
 
     auto playToggler = Toggler::create("Play", &RBot::getModules().playing, this, menu_selector(RBotLayer::toggle), 1001);
     m_playToggler = playToggler;
-    playToggler->setPosition({winSize.width / 2 + 60, winSize.height / 2});
-    m_macroPage->addChild(playToggler, 100);
+    playToggler->setPosition(ccp(winSize.width / 2 + 90, winSize.height / 2));
+    m_macroPage->addChild(playToggler, 100000);
 
     auto sprOn = ButtonSprite::create(
         "Macro", 
@@ -521,11 +573,7 @@ bool RBotLayer::init()
     m_label->setScale(.5f);
     m_macroPage->addChild(m_label);
 
-    #if GAME_VERSION > V1P0
     spr = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
-    #else
-    spr = CCSprite::create("GJ_infoIcon_001.png");
-    #endif
 
     auto infoBtn = CCMenuItemExt::createWithSpriteExtra(
         spr,
@@ -546,7 +594,7 @@ bool RBotLayer::init()
     infoBtn->setPosition(ccp(winSize.width - 60, 30));
     menu = CCMenu::create(infoBtn, NULL);
     menu->setPosition(CCPointZero);
-    contentHolder->addChild(menu, 20);
+    contentHolder->addChild(menu);
 
     CCArray* childrenself = this->m_parent->getChildren(); 
 
