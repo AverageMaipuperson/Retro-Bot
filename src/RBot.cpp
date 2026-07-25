@@ -20,7 +20,7 @@ using namespace cocos2d;
 
 std::string RBot::getVersion()
 {
-    return "0.911 beta";
+    return "0.912 beta";
 }
 
 bool compareFrames(Action a, Action b)
@@ -199,7 +199,6 @@ CCNode* RBotLayer::togglerFromModule(const Module& m)
 
     auto container = CCNode::create();
 
-    // im too lazy to make a CCMenuItemTogglerExtExtra or whatever stay with an annoying bug at the moment
     auto btn = CCMenuItemExt::createWithToggler(
         off,
         on,
@@ -214,6 +213,7 @@ CCNode* RBotLayer::togglerFromModule(const Module& m)
     );
     if(val) static_cast<CCMenuItemToggler*>(btn->getWrapper())->toggle(true);
 
+    #if GAME_VERSION < V1P5
     auto target = btn->getTarget();
     auto wrapper = btn->getWrapper();
     btn->setTarget(
@@ -223,6 +223,7 @@ CCNode* RBotLayer::togglerFromModule(const Module& m)
             static_cast<CCMenuItemToggler*>(wrapper)->toggle(mod::module_by_id<bool>(id));
         }
     );
+    #endif
 
     btn->setAnchorPoint(ccp(0, 0.5f));
     btn->setScale(0.8f);
@@ -507,7 +508,7 @@ bool RBotLayer::init()
     this->m_textInput = CCTextInputNode::create(120, 40, "Speedhack", "Thonburi", 15, "chatFont.fnt");
     MEMBER_BY_OFFSET(void*, m_textInput, 0x16c) = nullptr; 
     MEMBER_BY_OFFSET(cocos2d::CCTextFieldTTF*, this->m_textInput, CCTextInputNode__m_textField)->setOpacity(200);
-    this->m_textInput->setPosition(ccp(winSize.width / 2 + 20, winSize.height / 1.5 - 50));
+    this->m_textInput->setPosition(ccp(winSize.width / 2 + 20, winSize.height / 1.5 - 55));
     this->m_textInput->setMaxLabelScale(1);
     this->m_textInput->setLabelPlaceholderScale(1);
     this->m_textInput->setScale(0.5f);

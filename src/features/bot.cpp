@@ -56,7 +56,6 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
         MEMBER_BY_OFFSET(CCPoint, self, PlayLayer__m_realPosition) = frame.position;
         getPlayer(self)->setRotation(frame.rotation);
         getPlayer(self)->setScaleY(frame.flipY);
-        MEMBER_BY_OFFSET(bool, getPlayer(self), PlayerObject__m_onGround) = frame.onGround;
         
         modules.frame = index;
     }
@@ -76,8 +75,7 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
             #else
             MEMBER_BY_OFFSET(CCPoint, self, PlayLayer__m_realPosition),
             #endif
-            getPlayer(self)->getRotation(),
-            MEMBER_BY_OFFSET(bool, getPlayer(self), PlayerObject__m_onGround)
+            getPlayer(self)->getRotation()
         });
         modules.frame++;
     }

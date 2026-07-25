@@ -66,7 +66,7 @@ void MacroLoader::loadFile(char const* macroName) {
     }
     size_t size;
     inputFile.read(reinterpret_cast<char*>(&size), sizeof(size));
-    if(size > 99999)
+    if(size > 999999)
     {
         FLAlertLayer::create(
                 nullptr,

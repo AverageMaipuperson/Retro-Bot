@@ -28,7 +28,6 @@ struct Frame {
     float flipY;
     CCPoint position;
     float rotation;
-    bool onGround;
     bool operator==(const Frame& other) const {
         return this->frame == other.frame;
     }

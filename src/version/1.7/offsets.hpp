@@ -16,6 +16,7 @@
 
 #define PlayerObject__m_gravity           0x300  // PlayerObject::gravityUp
 #define PlayerObject__m_yVelocity         0x328  // PlayerObject::hitGround (first line)
+#define PlayerObject__m_onGround          0x30d  // PlayerObject::getOnGround
 
 ///////////////////////////////////////////////////////
 /*                  CCTextInputNode                  */

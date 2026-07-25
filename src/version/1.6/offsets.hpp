@@ -3,9 +3,9 @@
 ///////////////////////////////////////////////////////
 
 #define PlayLayer__m_hazards              0x18c  // PlayLayer::checkCollisions
-#define PlayLayer__m_isPractice           0x215  // PlayLayer::getPracticeMode
+#define PlayLayer__m_isPractice           0x29d  // PlayLayer::getPracticeMode
 #define PlayLayer__m_realPosition         0x240  // PlayLayer::update (last cocos2d::CCPoint::operator= call)
-#define PlayLayer__m_playerObject         0x1ec  // PlayLayer::getPlayer
+#define PlayLayer__m_playerObject         0x274  // PlayLayer::getPlayer
 #define PlayLayer__m_cameraPos            0x27c  // PlayLayer::getCameraPos
 #define PlayLayer__m_objects              0x188  // PlayLayer::init (first CCArray::create call after updateGlowColor)
 #define PlayLayer__m_gameLayer            0x2ac  // PlayLayer::getGameLayer
@@ -15,7 +15,8 @@
 ///////////////////////////////////////////////////////
 
 #define PlayerObject__m_gravity           0x3a0  // PlayerObject::gravityUp
-#define PlayerObject__m_yVelocity         0x398  // PlayerObject::hitGround (first line)
+#define PlayerObject__m_yVelocity         0x3c0  // PlayerObject::hitGround (first line)
+#define PlayerObject__m_onGround          0x488  // PlayerObject::getOnGround
 
 ///////////////////////////////////////////////////////
 /*                  CCTextInputNode                  */
