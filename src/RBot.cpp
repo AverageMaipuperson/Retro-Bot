@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include "save.hpp"
 #include <iostream>
+#include "rbot/ClickLoader.hpp"
 
 #define MACRO_TAG 679999
 #define SETTINGS_TAG 4804376
@@ -20,7 +21,7 @@ using namespace cocos2d;
 
 std::string RBot::getVersion()
 {
-    return "0.912 beta";
+    return "0.92 beta";
 }
 
 bool compareFrames(Action a, Action b)
@@ -198,6 +199,8 @@ CCNode* RBotLayer::togglerFromModule(const Module& m)
     auto val = mod::module_by_id<bool>(m.id);
 
     auto container = CCNode::create();
+
+            CCLog("%s", mod::get_type(click_sound_path).name());
 
     auto btn = CCMenuItemExt::createWithToggler(
         off,
@@ -508,7 +511,7 @@ bool RBotLayer::init()
     this->m_textInput = CCTextInputNode::create(120, 40, "Speedhack", "Thonburi", 15, "chatFont.fnt");
     MEMBER_BY_OFFSET(void*, m_textInput, 0x16c) = nullptr; 
     MEMBER_BY_OFFSET(cocos2d::CCTextFieldTTF*, this->m_textInput, CCTextInputNode__m_textField)->setOpacity(200);
-    this->m_textInput->setPosition(ccp(winSize.width / 2 + 20, winSize.height / 1.5 - 55));
+    this->m_textInput->setPosition(ccp(winSize.width / 2 + 20, winSize.height / 4 + 25));
     this->m_textInput->setMaxLabelScale(1);
     this->m_textInput->setLabelPlaceholderScale(1);
     this->m_textInput->setScale(0.5f);
@@ -555,7 +558,7 @@ bool RBotLayer::init()
         }
     );
 
-    float y = 15 * mod_map.size();
+    float y = 17.5f * (mod_map.size() - 1);
 
     for(const auto mod : mod_map)
     {
@@ -575,6 +578,7 @@ bool RBotLayer::init()
     m_macroPage->addChild(m_label);
 
     spr = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
+    spr->setScale(1.25f);
 
     auto infoBtn = CCMenuItemExt::createWithSpriteExtra(
         spr,
@@ -592,10 +596,65 @@ bool RBotLayer::init()
             )->show();
         }
     );
-    infoBtn->setPosition(ccp(winSize.width - 60, 30));
+    infoBtn->setPosition(ccp(winSize.width - 45, 25));
     menu = CCMenu::create(infoBtn, NULL);
     menu->setPosition(CCPointZero);
     contentHolder->addChild(menu);
+
+    spr = CCSprite::create("discordIcon.png");
+    auto discordBtn = CCMenuItemExt::createWithSpriteExtra(
+        spr,
+        [](CCObject*)
+        {
+        openURL("https://discord.gg/bMpBqMMF2w");
+        }
+    );
+    discordBtn->setPosition(ccp(60, 35));
+    menu->addChild(discordBtn);
+
+    spr = ButtonSprite::create(
+        "Load Sound", 100, 0, 1, false, "goldFont.fnt", "GJ_button_01-hd.png"
+    );
+    spr->setScale(.75f);
+
+    auto soundBtn = CCMenuItemExt::createWithSpriteExtra(
+        spr,
+        [this](CCObject*)
+        {
+            auto layer = ClickLoader::create(this);
+            this->addChild(layer, 10000);
+        }
+    );
+    soundBtn->setPosition(ccp(winSize.width / 2, winSize.height - 35));
+    soundBtn->setAnchorPoint(ccp(0, .5));
+
+    m_soundsMenu = CCMenu::create(soundBtn, NULL);
+    m_soundsMenu->setPosition(CCPointZero);
+    m_settingsPage->addChild(m_soundsMenu);
+
+    if(mod::module_by_id<bool>(id::click_sounds))
+    {
+        this->m_soundsMenu->setVisible(true);
+        this->m_soundsMenu->setEnabled(true);
+    } else {
+        this->m_soundsMenu->setVisible(false);
+        this->m_soundsMenu->setEnabled(false);
+    }
+
+    mod::set_target(
+        id::click_sounds,
+        [this, bg]()
+        {
+            if(mod::module_by_id<bool>(id::click_sounds))
+            {
+                this->m_soundsMenu->setVisible(true);
+                this->m_soundsMenu->setEnabled(true);
+            } else {
+                this->m_soundsMenu->setVisible(false);
+                this->m_soundsMenu->setEnabled(false);
+            }
+        }
+    );
 
     CCArray* childrenself = this->m_parent->getChildren(); 
 
@@ -635,11 +694,13 @@ void RBotLayer::keyBackClicked() {
     auto str = std::string(MEMBER_BY_OFFSET(CCTextFieldTTF*, this->m_textInput, CCTextInputNode__m_textField)->getString());
     #else
     auto res = MEMBER_BY_OFFSET(CCTextFieldTTF*, this->m_textInput, CCTextInputNode__m_textField)->m_pInputText;
-    auto str = (res != nullptr) ? *res : "1.0"; 
+    auto str = (res != nullptr) ? *res : "1.0";
     #endif
     std::stringstream ss(str);
     float f;
     ss >> f;
+
+    if(f < 0.1 || f > 999) f = 1;
 
     mod_map[id::speedhack_val] = f;
 

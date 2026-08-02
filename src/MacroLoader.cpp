@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <cstring>
 #include "fmt/format.h"
+#include "rapidjson/document.h"
 using namespace cocos2d;
 
 #define MEMBER_BY_OFFSET(type, var, offset) \
@@ -28,64 +29,67 @@ MacroLoader* MacroLoader::create(RBotLayer* parent) {
     return nullptr;
 }
 
-void MacroLoader::loadFile(char const* macroName) {
-    /* cocos2d::JniMethodInfo t;
-    if (cocos2d::JniHelper::getStaticMethodInfo(t, 
-        "com/robtopx/geometryjump/GeometryJump", 
-        "openFolderSelector", 
-        "()V")) 
+std::vector<Frame> MacroLoader::readJson(char const* jsonContent)
+{
+    std::vector<Frame> frames;
+    rapidjson::Document document;
+
+    document.Parse<rapidjson::kParseFullPrecisionFlag>(jsonContent);
+
+    if (!document.IsObject()) {
+        return frames;
+    }
+
+    for (auto it = document.MemberBegin(); it != document.MemberEnd(); ++it)
     {
-        t.env->CallStaticVoidMethod(t.classID, t.methodID);
-        t.env->DeleteLocalRef(t.classID);
-    } */
-   std::ifstream inputFile{ std::string(macroName), std::ios::binary };
+        const rapidjson::Value& obj = it->value;
+
+        Frame frame;
+        char* ptr;
+        
+        frame.frame = std::strtod(it->name.GetString(), &ptr);
+        
+        frame.position.x = static_cast<float>(obj["x"].GetDouble());
+        frame.position.y = static_cast<float>(obj["y"].GetDouble());
+        frame.rotation = static_cast<float>(obj["rot"].GetDouble());
+        frame.flipY = static_cast<float>(obj["flip"].GetDouble());
+
+        frames.push_back(frame);
+    }
+
+    return frames;
+}
+
+void MacroLoader::loadFile(char const* macroName) {
+    std::ifstream inputFile{ std::string(macroName), std::ios::in }; // Open as text, not binary
     if (!inputFile.is_open()) {
         FLAlertLayer::create(
-                nullptr,
-                "Error",
-                "Could not load the macro file. <cg>Try checking if you gave the app storage permissions.</c>",
-                "OK",
-                nullptr,
-                300.f
-            )->show();
+            nullptr, 
+            "Error", 
+            "Could not load the macro file.", 
+            "OK", 
+            nullptr, 
+            300.f
+        )->show();
         return;
     }
-    char header[4];
-    inputFile.read(header, 4);
-
-    if (!inputFile || std::memcmp(header, "rbot", 4) != 0) {
-        FLAlertLayer::create(
-                nullptr,
-                "Error",
-                "Could not load the macro file. <cr>fatal:</c> corrupted file",
-                "OK",
-                nullptr,
-                300.f
-            )->show();
-        return;
-    }
-    size_t size;
-    inputFile.read(reinterpret_cast<char*>(&size), sizeof(size));
-    if(size > 999999)
-    {
-        FLAlertLayer::create(
-                nullptr,
-                "Error",
-                "Could not load the macro file. <cr>fatal:</c> macro too big. will cause memory exhaustion",
-                "OK",
-                nullptr,
-                300.f
-            )->show();
-        return;
-    }
-    auto& actions = RBot::getFrameData();
-    actions.clear();
-    actions.resize(size);
-    inputFile.read(reinterpret_cast<char*>(actions.data()), size * sizeof(Frame));
-
+    std::string json((std::istreambuf_iterator<char>(inputFile)), std::istreambuf_iterator<char>());
     inputFile.close();
 
-    // MEMBER_BY_OFFSET(cocos2d::CCTextFieldTTF*, this->m_parent->m_textInput, CCTextInputNode__m_textField)->setString(CCString::createWithFormat("%.1f", RBot::getModules().tps)->getCString());
+    auto& actions = RBot::getFrameData();
+    actions = readJson(json.c_str());
+
+    if(actions.empty()) {
+        FLAlertLayer::create(
+            nullptr, 
+            "Error", 
+            "Macro data was empty or invalid.", 
+            "OK", 
+            nullptr, 
+            300.f
+        )->show();
+        return;
+    }
 
     FLAlertLayer::create(
         nullptr, 
@@ -95,13 +99,13 @@ void MacroLoader::loadFile(char const* macroName) {
         nullptr, 
         300.f
     )->show();
-
     m_parent->updateLabel();
 }
 
-std::vector<MacroFile> MacroLoader::getMacros()
+
+std::vector<File> MacroLoader::getMacros()
 {
-    std::vector<MacroFile> vector;
+    std::vector<File> vector;
 
     auto* b_dir = opendir("/sdcard/rbot/macros/");
     if(b_dir == nullptr) return vector;

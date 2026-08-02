@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cocos2d.h>
+#include "../cocos2dcpp.h"
 #include "PlayerObject.hpp"
 #include "GJGameLevel.hpp"
 
@@ -13,10 +13,7 @@ public:
     void resetLevel();
     void levelComplete();
     void removeLastCheckpoint();
-	void getPlayLayer();
-	void triggerCustomPulse(float);
-	void pulseLabelRed(CCLabelBMFont* label, float duration);
-	virtual void draw() override;
     CCNode* getLastCheckpoint();
     GJGameLevel* getLevel() const;
+    void onStepper(CCObject*);
 };

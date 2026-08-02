@@ -12,6 +12,7 @@
 #include <fstream>
 #include "sys/stat.h"
 #include "offsets.hpp"
+#include "platform/android/jni/JniHelper.h"
 using namespace cocos2d;
 
 inline CCSprite* getToggleSprite(CCSprite* on, CCSprite* off, bool state) { return (state) ? on : off; }
@@ -144,4 +145,21 @@ inline void limitLabelWidth(CCLabelBMFont* label, float maxWidth)
 {
     float width = label->getContentSize().width * label->getScale();
     if (width > maxWidth) label->setScale(maxWidth / label->getContentSize().width);
+}
+
+inline void openURL(const char* url)
+{
+    JniMethodInfo t;
+    if (JniHelper::getStaticMethodInfo(t, "com/customRobTop/BaseRobTopActivity", "openURL", "(Ljava/lang/String;)V")) {
+        jstring stringArg = t.env->NewStringUTF(url);
+        t.env->CallStaticVoidMethod(t.classID, t.methodID, stringArg);
+        t.env->DeleteLocalRef(stringArg);
+        t.env->DeleteLocalRef(t.classID);
+    }
+}
+
+inline bool exists(const std::string& name)
+{
+    std::ifstream f(name.c_str());
+    return f.good();
 }

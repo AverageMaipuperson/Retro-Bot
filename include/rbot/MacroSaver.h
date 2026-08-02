@@ -13,11 +13,13 @@ public:
     RBotLayer* m_parent;
     CCTextInputNode* m_textInput;
     CCTextInputNode* m_textInput2;
+    bool m_opt;
     static MacroSaver* create(RBotLayer*);
     virtual bool init();
     virtual void keyBackClicked() override;
     void toggle(CCObject*);
     void saveFile();
+    std::string framesToJson();
     virtual ~MacroSaver() {}
     virtual bool onTextFieldInsertText(cocos2d::CCTextFieldTTF* sender, const char* text, int nLen) override { return true; }
     virtual bool onTextFieldDetachWithIME(cocos2d::CCTextFieldTTF* sender) override { return true; }

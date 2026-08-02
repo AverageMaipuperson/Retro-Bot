@@ -28,6 +28,8 @@ struct Frame {
     float flipY;
     CCPoint position;
     float rotation;
+    bool click;
+    bool release;
     bool operator==(const Frame& other) const {
         return this->frame == other.frame;
     }
@@ -58,6 +60,25 @@ struct Modules {
     float time;
     bool completed;
     CCLabelBMFont* playbackLabel;
+    bool advanceFrame;
+    CCMenu* stepperMenu;
+    float dt;
+    bool stepperOn;
+    bool paused;
+    std::string soundPath;
+    bool isClicking;
+    Frame* usedFrame;
+};
+
+struct File
+{
+    std::string path;
+    std::string name;
+    long long size;
+    bool operator==(const File& other) const
+    {
+        return name == other.name;
+    }
 };
 
 class RBot {
@@ -90,6 +111,7 @@ public:
     CCMenuItemToggler* m_macroToggler;
     CCMenuItemToggler* m_settingsToggler;
     CCLabelBMFont* m_label;
+    CCMenu* m_soundsMenu;
     static RBotLayer* create(PauseLayer*);
     virtual bool init();
     void clearMacro(CCObject*);

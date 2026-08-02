@@ -14,6 +14,10 @@
 #include "GameManager.hpp"
 #include "tools.hpp"
 #include "CCMenuItemExt.h"
+#include "rapidjson/document.h"
+#include "rapidjson/writer.h"
+#include "rapidjson/stringbuffer.h"
+#include "Toggler.h"
 using namespace cocos2d;
 
 #define MEMBER_BY_OFFSET(type, var, offset) \
@@ -31,6 +35,35 @@ MacroSaver* MacroSaver::create(RBotLayer* parent)
     }
     CC_SAFE_DELETE(ret);
     return nullptr;
+}
+
+using rapidjson::Value;
+std::string MacroSaver::framesToJson()
+{
+    rapidjson::Document document;
+    document.SetObject();
+    auto& allocator = document.GetAllocator();
+    for(const Frame& frame : RBot::getFrameData())
+    {
+        std::string str = fmt::format("{}", frame.frame);
+        rapidjson::Value key;
+        key.SetString(str.c_str(), str.length(), allocator);
+        rapidjson::Value obj(rapidjson::kObjectType);
+
+        obj.AddMember("x", frame.position.x, allocator);
+        obj.AddMember("y", frame.position.y, allocator);
+        obj.AddMember("rot", frame.rotation, allocator);
+        obj.AddMember("flip", frame.flipY, allocator);
+
+        document.AddMember(key, obj, allocator);
+    }
+
+    rapidjson::StringBuffer buffer;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+    writer.SetMaxDecimalPlaces(32);
+    document.Accept(writer);
+    
+    return buffer.GetString();
 }
 
 void MacroSaver::saveFile()
@@ -69,11 +102,8 @@ void MacroSaver::saveFile()
         return;
     }
 
-    outputFile.write("rbot", 4);
-    const auto& actions = RBot::getFrameData();
-    auto size = actions.size();
-    outputFile.write(reinterpret_cast<char*>(&size), sizeof(size));
-    outputFile.write(reinterpret_cast<const char*>(actions.data()), size * sizeof(Action));
+    auto str = framesToJson();
+    outputFile.write(str.c_str(), str.size());
     
     outputFile.close();
     FLAlertLayer::create(

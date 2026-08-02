@@ -31,6 +31,8 @@ void PauseLayer_customSetup_H(PauseLayer* self)
     menu->setPosition(CCPointZero);
     self->addChild(menu);
     CCDirector::sharedDirector()->getScheduler()->setTimeScale(1);
+
+    RBot::getModules().paused = true;
 }
 
 void button_hook()

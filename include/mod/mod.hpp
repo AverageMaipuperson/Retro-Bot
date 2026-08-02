@@ -12,7 +12,10 @@ enum id
     speedhack_val,
     update_on_steps,
     show_hitboxes,
-    disable_mirror_portals
+    disable_mirror_portals,
+    frame_stepper,
+    click_sounds,
+    click_sound_path
 };
 
 enum category
@@ -44,7 +47,7 @@ inline std::map<id, Module> mod_map;
 namespace mod
 {
     template <typename T>
-    void module(::id id, ::category category, std::string name, std::string description, T defaultValue, bool isCheat = false, const ModCallback& callback = [](){})
+    void module(::id id, ::category category, std::string name, std::string description, const T& defaultValue, bool isCheat = false, const ModCallback& callback = [](){})
     {
         Module m;
         m.id = id;
@@ -62,6 +65,12 @@ namespace mod
     T module_by_id(::id id)
     {
         return linb::any_cast<T>(mod_map[id].value);
+    }
+
+    template <typename T>
+    T& module_by_id_ref(::id id)
+    {
+        return *linb::any_cast<T>(&mod_map[id].value);
     }
 
     inline const std::type_info& get_type(::id id)
@@ -82,3 +91,4 @@ namespace mod
 }
 
 #define ID_CAST(o) static_cast<::id>(o)
+#define NEW_VALUE(id, v) mod_map[id] = o

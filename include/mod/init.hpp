@@ -1,4 +1,5 @@
 #pragma once
+#include <cocos2dcpp.h>
 #include "mod.hpp"
 #include "../robtop/FLAlertLayer.hpp"
 #include "../KittyMemory/KittyMemory.h"
@@ -86,15 +87,6 @@ namespace mod
             false
         );
 
-        mod::module<float>(
-            id::speedhack_val,
-            category::values,
-            "",
-            "",
-            1.0f,
-            false
-        );
-
         mod::module<bool>(
             id::update_on_steps,
             category::menu,
@@ -131,9 +123,55 @@ namespace mod
             id::disable_mirror_portals,
             category::menu,
             "Disable Mirror Portals",
-            "Prevents the level from flipping, this is a temporary fix to a fatal bug so turn this option on if you have issues botting a level with mirror portals.",
+            "",
             true,
             true
+        );
+
+        mod::module<bool>(
+            id::frame_stepper,
+            category::menu,
+            "Frame Stepper",
+            "Allows you to advance frame by frame.",
+            false,
+            false
+        );
+
+        mod::module<bool>(
+            id::click_sounds,
+            category::menu,
+            "Click Sounds",
+            "",
+            false,
+            false
+        );
+
+
+
+
+
+
+
+        /////////////////////////////////////////////////////////////////
+        ///                   OTHER DEFINITIONS                       ///
+        /////////////////////////////////////////////////////////////////
+
+        mod::module<float>(
+            id::speedhack_val,
+            category::values,
+            "",
+            "",
+            1.0f,
+            false
+        );
+
+        mod::module<std::string>(
+            id::click_sound_path,
+            category::values,
+            "",
+            "",
+            std::string(""),
+            false
         );
 
         patch_init();

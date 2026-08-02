@@ -29,6 +29,9 @@ public:
 	void onPrevStartPos(CCObject*);
 	void onNextStartPos(CCObject*);
 
+    void onStepper(CCObject*);
+    void disableStepper(CCObject*);
+
 	void updateCheatIndicator();
 
 	void noclipLabel();

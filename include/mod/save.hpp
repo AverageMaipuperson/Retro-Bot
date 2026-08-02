@@ -5,6 +5,7 @@
 #include "fmt/format.h"
 #include "tools.hpp"
 #include "mod.hpp"
+#include "../rbot/RBot.h"
 
 namespace mod
 {
@@ -43,6 +44,11 @@ namespace mod
         std::ofstream dst("/storage/emulated/0/rbot/json/mod.json");
         dst << str;
         dst.close();
+
+        str = RBot::getModules().soundPath.c_str();
+        std::ofstream dst2("/storage/emulated/0/rbot/json/soundPath.txt");
+        dst2 << str;
+        dst2.close();
     }
 
     inline void load()
@@ -78,6 +84,15 @@ namespace mod
                 }
             }
             src.close();
+        }
+
+        path = "/storage/emulated/0/rbot/json/soundPath.txt";
+        std::ifstream src2(path);
+        if (src2.is_open())
+        {
+            std::stringstream buffer;
+            buffer << src2.rdbuf();
+            RBot::getModules().soundPath = std::string(buffer.str());
         }
     }
 }

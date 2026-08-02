@@ -6,6 +6,7 @@
 #include "other/hooking.h"
 #include "mod.hpp"
 #include "PlayHitboxLayer.hpp"
+#include "GameSoundManager.hpp"
 
 void createPlaybackLabel()
 {
@@ -22,6 +23,17 @@ void (*PlayLayer_update)(PlayLayer*, float);
 void PlayLayer_update_H(PlayLayer* self, float dt)
 {
     auto& modules = RBot::getModules();
+    modules.paused = false;
+    if (modules.stepperOn || mod::module_by_id<bool>(id::update_on_steps) && modules.mode == Modes::kModeRecording) dt = 1.0f / 240.0f;
+    
+    if(mod::module_by_id<bool>(id::frame_stepper))
+    {
+        modules.stepperMenu->setEnabled(true);
+        modules.stepperMenu->setVisible(true);
+    } else {
+        modules.stepperMenu->setEnabled(false);
+        modules.stepperMenu->setVisible(false);
+    }
     auto& data = RBot::getFrameData();
 
     if (modules.mode == Modes::kModePlaying)
@@ -56,6 +68,12 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
         MEMBER_BY_OFFSET(CCPoint, self, PlayLayer__m_realPosition) = frame.position;
         getPlayer(self)->setRotation(frame.rotation);
         getPlayer(self)->setScaleY(frame.flipY);
+
+        if(mod::module_by_id<bool>(id::click_sounds) && frame.click)
+        {
+            auto sound = GameSoundManager::sharedManager();
+            sound->playEffect(modules.soundPath.c_str(), 1, 0, 1);
+        }
         
         modules.frame = index;
     }
@@ -75,9 +93,12 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
             #else
             MEMBER_BY_OFFSET(CCPoint, self, PlayLayer__m_realPosition),
             #endif
-            getPlayer(self)->getRotation()
+            getPlayer(self)->getRotation(),
+            false,
+            false
         });
         modules.frame++;
+        modules.usedFrame = &RBot::getFrameData().back();
     }
 
     if(mod::module_by_id<bool>(id::playback_label) && modules.mode == kModePlaying)
@@ -85,7 +106,7 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
         modules.playbackLabel->setVisible(true);
     } else modules.playbackLabel->setVisible(false);
 
-    if(!modules.completed)
+    if(!modules.completed && !modules.stepperOn)
     {
         if(mod::module_by_id<bool>(id::speedhack)) CCDirector::sharedDirector()->getScheduler()->setTimeScale(mod::module_by_id<float>(id::speedhack_val));
         else CCDirector::sharedDirector()->getScheduler()->setTimeScale(1);
@@ -167,18 +188,101 @@ void PlayLayer_onQuit_H(PlayLayer* self)
     }
 }
 
+// force the game to run at 240 fps
+void (*CCScheduler_update)(CCScheduler*, float);
+void CCScheduler_update_H(CCScheduler* self, float dt)
+{
+    if (RBot::getModules().stepperOn && !RBot::getModules().paused && RBot::getModules().mode == Modes::kModeRecording) {
+        return; 
+    }
+
+    if(!mod::module_by_id<bool>(id::update_on_steps))
+    {
+        RBot::getModules().dt = dt;
+        CCScheduler_update(self, dt);
+        return;
+    }
+
+    static double accumulator = 0;
+    accumulator += static_cast<double>(dt) * 1;
+    auto delta = 1.0 / 240;
+
+    auto step_epsilon = delta * 0.001;
+    while (accumulator >= (delta - step_epsilon))
+    {
+        CCScheduler_update(self, static_cast<float>(delta));
+        accumulator -= delta;
+    }
+    if (accumulator > delta * 5.0) accumulator = 0;
+}
+
+
 bool (*UILayer_init)(UILayer*);
 bool UILayer_init_H(UILayer* self)
 {
     UILayer_init(self);
     auto& m = RBot::getModules();
+    auto winSize = CCDirector::sharedDirector()->getWinSize();
     if(!m.playbackLabel)
     {
         createPlaybackLabel();
     }
     if(!m.playbackLabel->getParent()) self->addChild(m.playbackLabel);
     if(!mod::module_by_id<bool>(id::playback_label) || m.mode != kModePlaying) m.playbackLabel->setVisible(false);
+
+    auto menu = CCMenu::create();
+    menu->setPosition(CCPointZero);
+    m.stepperMenu = menu;
+    
+    auto spr = CCSprite::createWithSpriteFrameName("edit_rightBtn_001.png");
+    auto btn = CCMenuItemSpriteExtra::create(
+        spr,
+        spr,
+        self,
+        menu_selector(UILayer::onStepper)
+    );
+    btn->setPosition(ccp(winSize.width / 4, winSize.height - 20));
+    menu->addChild(btn);
+
+    #if GAME_VERSION > V1P4
+    spr = CCSprite::createWithSpriteFrameName("GJ_deleteIcon_001.png");
+    #else
+    spr = CCSprite::create("GJ_deleteIcon_001.png");
+    #endif
+    btn = CCMenuItemSpriteExtra::create(
+        spr,
+        spr,
+        self,
+        menu_selector(UILayer::disableStepper)
+    );
+    btn->setPosition(ccp(winSize.width / 4 - 40, winSize.height - 20));
+    menu->addChild(btn);
+
+    self->addChild(menu);
+
+    if(!mod::module_by_id<bool>(id::frame_stepper))
+    {
+        menu->setEnabled(false);
+        menu->setVisible(false);
+    }
     return true;
+}
+
+void UILayer::onStepper(CCObject*)
+{
+    auto& m = RBot::getModules();
+    auto pl = GameManager::sharedState()->getPlayLayer();
+
+    m.stepperOn = true;
+    float delta = 1.0f / 240.0f;
+    
+    PlayLayer_update_H(pl, delta);
+}
+
+void UILayer::disableStepper(CCObject*)
+{
+    auto& m = RBot::getModules();
+    m.stepperOn = false;
 }
 
 void (*PlayLayer_storeCheckpoint)(PlayLayer* self, void* checkpoint);
@@ -219,28 +323,6 @@ bool PlayLayer_init_H(PlayLayer* self, GJGameLevel* lvl)
     return true;
 }
 
-// force the game to run at 240 fps
-void (*CCScheduler_update)(CCScheduler*, float);
-void CCScheduler_update_H(CCScheduler* self, float dt)
-{
-    if(!mod::module_by_id<bool>(id::update_on_steps))
-    {
-        CCScheduler_update(self, dt);
-        return;
-    }
-    static double accumulator = 0;
-    accumulator += static_cast<double>(dt) * 1;
-    auto delta = 1.0 / 240;
-
-    auto step_epsilon = delta * 0.001;
-    while (accumulator >= (delta - step_epsilon))
-    {
-        CCScheduler_update(self, static_cast<float>(delta));
-        accumulator -= delta;
-    }
-    if (accumulator > delta * 5.0) accumulator = 0;
-}
-
 void (*PlayLayer_visit)(PlayLayer*);
 void PlayLayer_visit_H(PlayLayer* self)
 {
@@ -264,8 +346,26 @@ void PlayLayer_toggleFlipped_H(PlayLayer* self, bool direction, bool doFlip)
     if(!mod::module_by_id<bool>(id::disable_mirror_portals)) PlayLayer_toggleFlipped(self, direction, doFlip);
 }
 
+void (*UILayer_ccTouchBegan)(UILayer*, CCTouch*, CCEvent*);
+void UILayer_ccTouchBegan_H(UILayer* self, CCTouch* touch, CCEvent* event)
+{
+    UILayer_ccTouchBegan(self, touch, event);
+    auto m = RBot::getModules();
+    if(m.mode == Modes::kModeRecording)
+    {
+        m.usedFrame->click = true;
+    }
+
+    if(m.mode != Modes::kModePlaying)
+    {
+        auto sound = GameSoundManager::sharedManager();
+        sound->playEffect(m.soundPath.c_str(), 1, 0, 1);
+    }
+}
+
 void bot_hook()
 {
+    HOOK("_ZN7UILayer12ccTouchBeganEPN7cocos2d7CCTouchEPNS0_7CCEventE", UILayer_ccTouchBegan_H, UILayer_ccTouchBegan);
     #if GAME_VERSION == V1P8
     HOOK("_ZN9PlayLayer5visitEv", PlayLayer_visit_H, PlayLayer_visit);
     #else
