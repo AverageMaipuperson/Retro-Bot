@@ -159,7 +159,7 @@ namespace mod
         mod::module<float>(
             id::speedhack_val,
             category::values,
-            "",
+            "a",
             "",
             1.0f,
             false
@@ -168,7 +168,7 @@ namespace mod
         mod::module<std::string>(
             id::click_sound_path,
             category::values,
-            "",
+            "b",
             "",
             std::string(""),
             false

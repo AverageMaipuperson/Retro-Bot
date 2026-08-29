@@ -21,7 +21,7 @@ using namespace cocos2d;
 
 std::string RBot::getVersion()
 {
-    return "0.92 beta";
+    return "0.921 beta";
 }
 
 bool compareFrames(Action a, Action b)
@@ -511,7 +511,7 @@ bool RBotLayer::init()
     this->m_textInput = CCTextInputNode::create(120, 40, "Speedhack", "Thonburi", 15, "chatFont.fnt");
     MEMBER_BY_OFFSET(void*, m_textInput, 0x16c) = nullptr; 
     MEMBER_BY_OFFSET(cocos2d::CCTextFieldTTF*, this->m_textInput, CCTextInputNode__m_textField)->setOpacity(200);
-    this->m_textInput->setPosition(ccp(winSize.width / 2 + 20, winSize.height / 4 + 25));
+    this->m_textInput->setPosition(ccp(winSize.width / 2 + 20, winSize.height / 4 + 20));
     this->m_textInput->setMaxLabelScale(1);
     this->m_textInput->setLabelPlaceholderScale(1);
     this->m_textInput->setScale(0.5f);
@@ -558,11 +558,14 @@ bool RBotLayer::init()
         }
     );
 
-    float y = 17.5f * (mod_map.size() - 1);
+    auto y = winSize.height / 2 + 20;
+    int mike = 0;
 
     for(const auto mod : mod_map)
     {
-        if(mod.second.category != category::menu) continue;
+        mike++;
+        if(mod.second.category != category::menu || mike > 10) continue;
+
         auto toggle = togglerFromModule(mod.second);
         toggle->setPosition(winSize.width / 4 - 10, winSize.height / 2 + 60 - y);
         y += -30;
@@ -625,7 +628,7 @@ bool RBotLayer::init()
             this->addChild(layer, 10000);
         }
     );
-    soundBtn->setPosition(ccp(winSize.width / 2, winSize.height - 35));
+    soundBtn->setPosition(ccp(winSize.width / 2, winSize.height - 40));
     soundBtn->setAnchorPoint(ccp(0, .5));
 
     m_soundsMenu = CCMenu::create(soundBtn, NULL);

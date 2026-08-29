@@ -24,21 +24,31 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
 {
     auto& modules = RBot::getModules();
     modules.paused = false;
-    if (modules.stepperOn || mod::module_by_id<bool>(id::update_on_steps) && modules.mode == Modes::kModeRecording) dt = 1.0f / 240.0f;
-    
+
     if(mod::module_by_id<bool>(id::frame_stepper))
     {
         modules.stepperMenu->setEnabled(true);
         modules.stepperMenu->setVisible(true);
-    } else {
+    }
+    else
+    {
         modules.stepperMenu->setEnabled(false);
         modules.stepperMenu->setVisible(false);
+        modules.stepperOn = false;
     }
+
+    const float step = 1.0f / 240.0f;
+    if (modules.stepperOn && dt != step) {
+        PlayLayer_update(self, 0); 
+        return;
+    }
+
+    if (modules.stepperOn || (mod::module_by_id<bool>(id::update_on_steps) && modules.mode == Modes::kModeRecording)) dt = step;
+
     auto& data = RBot::getFrameData();
 
     if (modules.mode == Modes::kModePlaying)
     {
-
         modules.time += dt;
 
         if (data.empty())
@@ -106,12 +116,16 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
         modules.playbackLabel->setVisible(true);
     } else modules.playbackLabel->setVisible(false);
 
-    if(!modules.completed && !modules.stepperOn)
+    if(!modules.completed)
     {
-        if(mod::module_by_id<bool>(id::speedhack)) CCDirector::sharedDirector()->getScheduler()->setTimeScale(mod::module_by_id<float>(id::speedhack_val));
-        else CCDirector::sharedDirector()->getScheduler()->setTimeScale(1);
+        if(!modules.stepperOn)
+        {
+            if(mod::module_by_id<bool>(id::speedhack)) CCDirector::sharedDirector()->getScheduler()->setTimeScale(mod::module_by_id<float>(id::speedhack_val));
+            else CCDirector::sharedDirector()->getScheduler()->setTimeScale(1);
+        } else CCDirector::sharedDirector()->getScheduler()->setTimeScale(0);
     }
 }
+
 
 void (*PlayLayer_resetLevel)(PlayLayer*);
 void PlayLayer_resetLevel_H(PlayLayer* self)
@@ -192,13 +206,14 @@ void PlayLayer_onQuit_H(PlayLayer* self)
 void (*CCScheduler_update)(CCScheduler*, float);
 void CCScheduler_update_H(CCScheduler* self, float dt)
 {
-    if (RBot::getModules().stepperOn && !RBot::getModules().paused && RBot::getModules().mode == Modes::kModeRecording) {
-        return; 
+    auto& modules = RBot::getModules();
+    if (modules.stepperOn && !modules.paused && modules.mode == Modes::kModeRecording) {
+        if (dt != 1.0f / 240.0f) return; 
     }
 
-    if(!mod::module_by_id<bool>(id::update_on_steps))
+    if(!mod::module_by_id<bool>(id::update_on_steps) && !modules.stepperOn)
     {
-        RBot::getModules().dt = dt;
+        modules.dt = dt;
         CCScheduler_update(self, dt);
         return;
     }
@@ -272,17 +287,27 @@ void UILayer::onStepper(CCObject*)
 {
     auto& m = RBot::getModules();
     auto pl = GameManager::sharedState()->getPlayLayer();
+    if (!pl) return;
 
     m.stepperOn = true;
+    CCDirector::sharedDirector()->getScheduler()->setTimeScale(0.0f);
+
     float delta = 1.0f / 240.0f;
     
     PlayLayer_update_H(pl, delta);
+    CCDirector::sharedDirector()->getScheduler()->update(delta);
 }
 
 void UILayer::disableStepper(CCObject*)
 {
     auto& m = RBot::getModules();
     m.stepperOn = false;
+    
+    if(mod::module_by_id<bool>(id::speedhack)) {
+        CCDirector::sharedDirector()->getScheduler()->setTimeScale(mod::module_by_id<float>(id::speedhack_val));
+    } else {
+        CCDirector::sharedDirector()->getScheduler()->setTimeScale(1.0f);
+    }
 }
 
 void (*PlayLayer_storeCheckpoint)(PlayLayer* self, void* checkpoint);
