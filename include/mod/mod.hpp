@@ -15,12 +15,15 @@ enum id
     disable_mirror_portals,
     frame_stepper,
     click_sounds,
-    click_sound_path
+    click_sound_path,
+    no_death_effect,
+    layout_mode
 };
 
 enum category
 {
     menu,
+    menu_page_2,
     values
 };
 

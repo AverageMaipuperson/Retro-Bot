@@ -109,6 +109,11 @@ void CCMenuItemExt::unselected()
     if(_wrap) _wrap->unselected();
 }
 
+void CCMenuItemExt::activate()
+{
+    if(_wrap) _wrap->activate();
+}
+
 void CCMenuItemExt::setEnabled(bool enabled)
 {
     CCMenuItem::setEnabled(enabled);
@@ -145,7 +150,9 @@ void* CCMenuItemExt::getData() const
 void CCMenuItemExt::callback(CCObject* sender)
 {
     if (_callback) _callback(sender);
-    if(auto toggler = dynamic_cast<CCMenuItemToggler*>(_wrap)) toggler->toggle(!toggler->m_toggled);
+    #if GAME_VERSION < V1P5
+    // if(auto toggler = dynamic_cast<CCMenuItemToggler*>(_wrap)) toggler->toggle(!toggler->m_toggled);
+    #endif
 }
 
 CCMenuItemExt::Callback& CCMenuItemExt::getTarget()

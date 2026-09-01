@@ -28,7 +28,7 @@ command.txt
 *.dylib
 *.dll
 *.so.*
-
+lib/
 
 # Fortran module files
 *.mod

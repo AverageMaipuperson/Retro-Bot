@@ -16,4 +16,10 @@ public:
     CCNode* getLastCheckpoint();
     GJGameLevel* getLevel() const;
     void onStepper(CCObject*);
+    void toggleLayoutMode(bool);
+    void tintBackground(cocos2d::_ccColor3B, float);
+    void tintGround(cocos2d::_ccColor3B, float);
+    void tintLine(cocos2d::_ccColor3B, float);
+    void tintObjects(cocos2d::_ccColor3B, float);
+    void tintColorObjects(cocos2d::_ccColor3B, float);
 };

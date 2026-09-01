@@ -21,7 +21,7 @@ using namespace cocos2d;
 
 std::string RBot::getVersion()
 {
-    return "0.921 beta";
+    return "0.922 beta";
 }
 
 bool compareFrames(Action a, Action b)
@@ -216,18 +216,6 @@ CCNode* RBotLayer::togglerFromModule(const Module& m)
     );
     if(val) static_cast<CCMenuItemToggler*>(btn->getWrapper())->toggle(true);
 
-    #if GAME_VERSION < V1P5
-    auto target = btn->getTarget();
-    auto wrapper = btn->getWrapper();
-    btn->setTarget(
-        [target, wrapper, id = m.id](CCObject* self)
-        {
-            target(self);
-            static_cast<CCMenuItemToggler*>(wrapper)->toggle(mod::module_by_id<bool>(id));
-        }
-    );
-    #endif
-
     btn->setAnchorPoint(ccp(0, 0.5f));
     btn->setScale(0.8f);
 
@@ -311,8 +299,11 @@ bool RBotLayer::init()
 
     m_macroPage = CCLayer::create();
     m_settingsPage = CCLayer::create();
+    m_settingsPage1 = CCLayer::create();
+    m_settingsPage2 = CCLayer::create();
 
     m_settingsPage->setVisible(false);
+    m_settingsPage2->setVisible(false);
 
     auto pivot = CCNode::create();
     pivot->setPosition(ccp(winSize.width/2, winSize.height/2));
@@ -519,14 +510,14 @@ bool RBotLayer::init()
     setAllowedChars(this->m_textInput, "0123456789.");
     this->m_textInput->setAnchorPoint({0, 0});
     this->m_textInput->setString(fmt::format("{}", mod::module_by_id<float>(id::speedhack_val)).c_str());
-    m_settingsPage->addChild(this->m_textInput, 100);
+    m_settingsPage1->addChild(this->m_textInput, 100);
 
     auto bg = extension::CCScale9Sprite::create("square02_001.png", CCRectMake(0,0,80,80));
     bg->setContentSize(CCSizeMake(m_textInput->getContentSize().width + 20, 60));
     bg->_setZOrder(m_textInput->getZOrder() - 1);
     bg->setPosition(ccp(m_textInput->getPositionX() - 10, m_textInput->getPositionY()));
     bg->setOpacity(67);
-    m_settingsPage->addChild(bg);
+    m_settingsPage1->addChild(bg);
     bg->setScale(0.5f);
 
     spr = CCSprite::createWithSpriteFrameName("GJ_timeIcon_001.png");
@@ -559,6 +550,7 @@ bool RBotLayer::init()
     );
 
     auto y = winSize.height / 2 + 20;
+    auto y2 = winSize.height / 2 + 20;
     int mike = 0;
 
     for(const auto mod : mod_map)
@@ -569,9 +561,19 @@ bool RBotLayer::init()
         auto toggle = togglerFromModule(mod.second);
         toggle->setPosition(winSize.width / 4 - 10, winSize.height / 2 + 60 - y);
         y += -30;
-        m_settingsPage->addChild(toggle);
+        m_settingsPage1->addChild(toggle);
     }
 
+    for(const auto mod : mod_map)
+    {
+        if(mod.second.category == category::menu_page_2)
+        {
+            auto toggle = togglerFromModule(mod.second);
+            toggle->setPosition(winSize.width / 4 - 10, winSize.height / 2 + 60 - y2);
+            y2 += -30;
+            m_settingsPage2->addChild(toggle);
+        }
+    }
 
     m_label = CCLabelBMFont::create(fmt::format("Size: {}", RBot::getFrameData().size()).c_str(), "chatFont.fnt");
     m_label->setColor(ccc3(0,0,0));
@@ -633,7 +635,7 @@ bool RBotLayer::init()
 
     m_soundsMenu = CCMenu::create(soundBtn, NULL);
     m_soundsMenu->setPosition(CCPointZero);
-    m_settingsPage->addChild(m_soundsMenu);
+    m_settingsPage1->addChild(m_soundsMenu);
 
     if(mod::module_by_id<bool>(id::click_sounds))
     {
@@ -658,6 +660,60 @@ bool RBotLayer::init()
             }
         }
     );
+
+    menu = CCMenu::create();
+    menu->setPosition(ccp(0,0));
+
+    spr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
+
+    m_prevBtn = CCMenuItemExt::createWithSpriteExtra(
+        spr,
+        [this](CCObject*)
+        {
+            m_nextBtn->setEnabled(true);
+            m_nextBtn->setVisible(true);
+            m_prevBtn->setEnabled(false);
+            m_prevBtn->setVisible(false);
+
+            m_settingsPage1->setVisible(true);
+            setChildrenEnabled(m_settingsPage1, true);
+
+            m_settingsPage2->setVisible(false);
+            setChildrenEnabled(m_settingsPage2, false);
+        }
+    );
+    m_prevBtn->setPosition(ccp(80, winSize.height / 2));
+    m_prevBtn->setEnabled(false);
+    m_prevBtn->setVisible(false);
+    menu->addChild(m_prevBtn);
+
+    spr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
+    spr->setFlipX(true);
+
+    m_nextBtn = CCMenuItemExt::createWithSpriteExtra(
+        spr,
+        [this](CCObject*)
+        {
+            m_nextBtn->setEnabled(false);
+            m_nextBtn->setVisible(false);
+            m_prevBtn->setEnabled(true);
+            m_prevBtn->setVisible(true);
+
+            m_settingsPage1->setVisible(false);
+            setChildrenEnabled(m_settingsPage1, false);
+
+            m_settingsPage2->setVisible(true);
+            setChildrenEnabled(m_settingsPage2, true);
+        }
+    );
+    m_nextBtn->setPosition(ccp(winSize.width - 80, winSize.height / 2));
+    menu->addChild(m_nextBtn);
+
+    m_settingsPage->addChild(menu);
+    m_settingsPage->addChild(m_settingsPage1);
+    m_settingsPage->addChild(m_settingsPage2);
+
+    CCLog("1");
 
     CCArray* childrenself = this->m_parent->getChildren(); 
 

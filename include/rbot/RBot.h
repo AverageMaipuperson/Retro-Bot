@@ -68,6 +68,7 @@ struct Modules {
     std::string soundPath;
     bool isClicking;
     Frame* usedFrame;
+    std::vector<_ccColor3B> colors;
 };
 
 struct File
@@ -108,10 +109,15 @@ public:
     CCTextInputNode* m_textInput;
     CCLayer* m_macroPage;
     CCLayer* m_settingsPage;
+    CCLayer* m_settingsPage1;
+    CCLayer* m_settingsPage2;
     CCMenuItemToggler* m_macroToggler;
     CCMenuItemToggler* m_settingsToggler;
     CCLabelBMFont* m_label;
     CCMenu* m_soundsMenu;
+    CCMenuItemExt* m_nextBtn;
+    CCMenuItemExt* m_prevBtn;
+
     static RBotLayer* create(PauseLayer*);
     virtual bool init();
     void clearMacro(CCObject*);

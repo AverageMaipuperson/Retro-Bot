@@ -79,6 +79,8 @@ protected:
     
     void unselected();
 
+    void activate();
+
     void callback(CCObject*);
 private:
     CCMenuItem* _wrap = nullptr;

@@ -124,6 +124,8 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
             else CCDirector::sharedDirector()->getScheduler()->setTimeScale(1);
         } else CCDirector::sharedDirector()->getScheduler()->setTimeScale(0);
     }
+
+    self->toggleLayoutMode(LAYOUT_CHECK);
 }
 
 
@@ -132,6 +134,7 @@ void PlayLayer_resetLevel_H(PlayLayer* self)
 {
     RBot::getModules().frame = 0;
     RBot::getModules().time = 0;
+    RBot::getModules().completed = false;
     PlayLayer_resetLevel(self);
     if (RBot::getModules().mode == kModeRecording && !isPractice(self)) 
     {
@@ -345,6 +348,7 @@ bool PlayLayer_init_H(PlayLayer* self, GJGameLevel* lvl)
 {
     PlayLayer_init(self, lvl);
     MEMBER_BY_OFFSET(CCLayer*, self, PlayLayer__m_gameLayer)->addChild(PlayHitboxLayer::create(self), 9999);
+    self->toggleLayoutMode(LAYOUT_CHECK);
     return true;
 }
 
@@ -388,8 +392,82 @@ void UILayer_ccTouchBegan_H(UILayer* self, CCTouch* touch, CCEvent* event)
     }
 }
 
+void PlayLayer::toggleLayoutMode(bool enabled)
+{
+    auto objects = MEMBER_BY_OFFSET(CCArray*, this, PlayLayer__m_objects);
+
+    for(int i = 0 ; i < objects->count() ; i++)
+    {
+        auto section = (CCArray*)objects->objectAtIndex(i);
+        for(int j = 0 ; j < section->count() ; j++)
+        {
+            auto obj = (GameObject*)section->objectAtIndex(j);
+            int type = MEMBER_BY_OFFSET(int, obj, GameObject__m_type);
+            if(type == 7 || type == 8) obj->setVisible(!enabled);
+        }
+    }
+
+    if(enabled)
+    {
+        this->tintBackground(ccc3(0,102,255), 0);
+        this->tintGround(ccc3(0,102,255), 0);
+
+        #if GAME_VERSION > V1P3
+        this->tintObjects(ccc3(255,255,255), 0);
+        this->tintLine(ccc3(255,255,255), 0);
+        #endif
+    
+        #if GAME_VERSION > V1P6
+        this->tintColorObjects(ccc3(255,255,255), 0);
+        #endif
+    }
+}
+
+void (*PlayLayer_updateLevelColors)(PlayLayer*);
+void PlayLayer_updateLevelColors_H(PlayLayer* self) {
+    if(!LAYOUT_CHECK) PlayLayer_updateLevelColors(self);
+}
+
+void (*PlayLayer_tintBackground)(PlayLayer*, _ccColor3B color, float len);
+void PlayLayer_tintBackground_H(PlayLayer* self, _ccColor3B color, float len) {
+    if(!LAYOUT_CHECK) PlayLayer_tintBackground(self, color, len);
+}
+
+void (*PlayLayer_tintGround)(PlayLayer*, _ccColor3B color, float len);
+void PlayLayer_tintGround_H(PlayLayer* self, _ccColor3B color, float len) {
+    if(!LAYOUT_CHECK) PlayLayer_tintGround(self, color, len);
+}
+
+void (*PlayLayer_tintLine)(PlayLayer*, _ccColor3B color, float len);
+void PlayLayer_tintLine_H(PlayLayer* self, _ccColor3B color, float len) {
+    if(!LAYOUT_CHECK) PlayLayer_tintLine(self, color, len);
+}
+
+void (*PlayLayer_tintObjects)(PlayLayer*, _ccColor3B color, float len);
+void PlayLayer_tintObjects_H(PlayLayer* self, _ccColor3B color, float len) {
+    if(!LAYOUT_CHECK) PlayLayer_tintObjects(self, color, len);
+}
+
+void (*PlayLayer_tintColorObjects)(PlayLayer*, _ccColor3B color, float len);
+void PlayLayer_tintColorObjects_H(PlayLayer* self, _ccColor3B color, float len) {
+    if(!LAYOUT_CHECK) PlayLayer_tintColorObjects(self, color, len);
+}
+
+void (*PlayerObject_playerDestroyed)(PlayerObject*);
+void PlayerObject_playerDestroyed_H(PlayerObject* self) {
+  if(!mod::module_by_id<bool>(id::no_death_effect)) PlayerObject_playerDestroyed(self);
+}
+
 void bot_hook()
 {
+    HOOK("_ZN12PlayerObject15playerDestroyedEv", PlayerObject_playerDestroyed_H, PlayerObject_playerDestroyed);
+    HOOK("_ZN9PlayLayer16tintColorObjectsEN7cocos2d10_ccColor3BEf", PlayLayer_tintColorObjects_H, PlayLayer_tintColorObjects); // 1.7
+    HOOK("_ZN9PlayLayer17updateLevelColorsEv", PlayLayer_updateLevelColors_H, PlayLayer_updateLevelColors); // 1.6
+    HOOK("_ZN9PlayLayer11tintObjectsEN7cocos2d10_ccColor3BEf", PlayLayer_tintObjects_H, PlayLayer_tintObjects); // 1.4
+    HOOK("_ZN9PlayLayer8tintLineEN7cocos2d10_ccColor3BEf", PlayLayer_tintLine_H, PlayLayer_tintLine); // 1.4
+    HOOK("_ZN9PlayLayer10tintGroundEN7cocos2d10_ccColor3BEf", PlayLayer_tintGround_H, PlayLayer_tintGround); // 1.0
+    HOOK("_ZN9PlayLayer14tintBackgroundEN7cocos2d10_ccColor3BEf", PlayLayer_tintBackground_H, PlayLayer_tintBackground); // 1.0
+
     HOOK("_ZN7UILayer12ccTouchBeganEPN7cocos2d7CCTouchEPNS0_7CCEventE", UILayer_ccTouchBegan_H, UILayer_ccTouchBegan);
     #if GAME_VERSION == V1P8
     HOOK("_ZN9PlayLayer5visitEv", PlayLayer_visit_H, PlayLayer_visit);

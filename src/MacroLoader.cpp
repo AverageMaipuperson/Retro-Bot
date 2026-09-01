@@ -61,7 +61,7 @@ std::vector<Frame> MacroLoader::readJson(char const* jsonContent)
 }
 
 void MacroLoader::loadFile(char const* macroName) {
-    std::ifstream inputFile{ std::string(macroName), std::ios::in }; // Open as text, not binary
+    std::ifstream inputFile{ std::string(macroName), std::ios::in };
     if (!inputFile.is_open()) {
         FLAlertLayer::create(
             nullptr, 

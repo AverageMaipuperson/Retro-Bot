@@ -146,7 +146,23 @@ namespace mod
             false
         );
 
+        mod::module<bool>(
+            id::no_death_effect,
+            category::menu_page_2,
+            "No Death Effect",
+            "",
+            false,
+            false
+        );
 
+        mod::module<bool>(
+            id::layout_mode,
+            category::menu_page_2,
+            "Layout Mode",
+            "",
+            false,
+            true
+        );
 
 
 
@@ -177,3 +193,5 @@ namespace mod
         patch_init();
     }
 }
+
+#define LAYOUT_CHECK mod::module_by_id<bool>(id::layout_mode)

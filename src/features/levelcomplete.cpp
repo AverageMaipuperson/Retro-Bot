@@ -14,7 +14,6 @@ void (*EndLevelLayer_customSetup)(EndLevelLayer*);
 void EndLevelLayer_customSetup_H(EndLevelLayer* self)
 {
     EndLevelLayer_customSetup(self);
-    if (RBot::getModules().mode != kModePlaying) return;
 
     auto mainLayer = MEMBER_BY_OFFSET(CCNode*, self, EndLevelLayer__m_mainLayer);
     auto children = mainLayer->getChildren();
@@ -33,5 +32,5 @@ void EndLevelLayer_customSetup_H(EndLevelLayer* self)
 void levelcomplete_hook()
 {
     HOOK("_ZN13EndLevelLayer11customSetupEv", EndLevelLayer_customSetup_H, EndLevelLayer_customSetup);
-    // HOOK("_ZN13EndLevelLayer10getEndTextEv", EndLevelLayer_getEndText_H, EndLevelLayer_getEndText);
+    HOOK("_ZN13EndLevelLayer10getEndTextEv", EndLevelLayer_getEndText_H, EndLevelLayer_getEndText);
 }
