@@ -1,16 +1,17 @@
-#include "RBot.h"
+#include "rbot.hpp"
 #include "PlayLayer.hpp"
 #include "UILayer.hpp"
 #include "PlayerObject.hpp"
 #include "tools.hpp"
-#include "other/hooking.h"
+#include "hooking.hpp"
 #include "mod.hpp"
 #include "PlayHitboxLayer.hpp"
 #include "GameSoundManager.hpp"
+#include "init.hpp"
 
 void createPlaybackLabel()
 {
-    auto& m = RBot::getModules();
+    auto& m = rbot::getModules();
     auto winSize = CCDirector::sharedDirector()->getWinSize();
     auto label = CCLabelBMFont::create("Playing", "chatFont.fnt");
     label->setPosition(ccp(winSize.width - 15, 15));
@@ -22,7 +23,7 @@ void createPlaybackLabel()
 void (*PlayLayer_update)(PlayLayer*, float);
 void PlayLayer_update_H(PlayLayer* self, float dt)
 {
-    auto& modules = RBot::getModules();
+    auto& modules = rbot::getModules();
     modules.paused = false;
 
     if(mod::module_by_id<bool>(id::frame_stepper))
@@ -38,6 +39,7 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
     }
 
     const float step = 1.0f / 240.0f;
+    dt = step;
     if (modules.stepperOn && dt != step) {
         PlayLayer_update(self, 0); 
         return;
@@ -45,7 +47,7 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
 
     if (modules.stepperOn || (mod::module_by_id<bool>(id::update_on_steps) && modules.mode == Modes::kModeRecording)) dt = step;
 
-    auto& data = RBot::getFrameData();
+    auto& data = rbot::getFrameData();
 
     if (modules.mode == Modes::kModePlaying)
     {
@@ -53,7 +55,7 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
 
         if (data.empty())
         {
-            RBot::stopMacro();
+            rbot::stopMacro();
             PlayLayer_update(self, dt);
             return;
         }
@@ -66,12 +68,12 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
 
         if (index >= data.size() - 1)
         {
-            RBot::stopMacro();
+            rbot::stopMacro();
             PlayLayer_update(self, dt);
             return;
         }
 
-        auto frame = RBot::getFrameData()[index];
+        auto frame = data[index];
 
         getPlayer(self)->setPosition(frame.position);
         getPlayer(self)->setLastP(frame.position);
@@ -92,85 +94,95 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
 
     if (modules.mode == Modes::kModeRecording)
     {
-        if (modules.completed) RBot::stopMacro();
+        if (modules.completed) rbot::stopMacro();
+
+        auto pos = MEMBER_BY_OFFSET(CCPoint, self, PlayLayer__m_realPosition);
+        if (MEMBER_BY_OFFSET(bool, self, PlayLayer__m_isFlipped)) // yes mirror portals exist in 1.0
+        {
+            auto winSize = CCDirector::sharedDirector()->getWinSize();
+            auto center = winSize.width / 2;
+            pos.x = (pos.x - center) + winSize.width - center;
+        }
         
         modules.time += dt;
-        RBot::getFrameData().push_back({
+        rbot::getFrameData().push_back({
             modules.time,
             getPlayer(self)->getScaleY(),
-            #if GAME_VERSION > V1P0
-            getPlayer(self)->getPosition(), 
-            #else
-            MEMBER_BY_OFFSET(CCPoint, self, PlayLayer__m_realPosition),
-            #endif
+            pos,
             getPlayer(self)->getRotation(),
             false,
-            false
+            false,
+            MEMBER_BY_OFFSET(bool, getPlayer(self), PlayerObject__m_onGround)
         });
         modules.frame++;
-        modules.usedFrame = &RBot::getFrameData().back();
+        modules.usedFrame = &rbot::getFrameData().back();
     }
 
     if(mod::module_by_id<bool>(id::playback_label) && modules.mode == kModePlaying)
     {
         modules.playbackLabel->setVisible(true);
     } else modules.playbackLabel->setVisible(false);
-
-    if(!modules.completed)
-    {
-        if(!modules.stepperOn)
-        {
-            if(mod::module_by_id<bool>(id::speedhack)) CCDirector::sharedDirector()->getScheduler()->setTimeScale(mod::module_by_id<float>(id::speedhack_val));
-            else CCDirector::sharedDirector()->getScheduler()->setTimeScale(1);
-        } else CCDirector::sharedDirector()->getScheduler()->setTimeScale(0);
-    }
-
-    self->toggleLayoutMode(LAYOUT_CHECK);
 }
-
 
 void (*PlayLayer_resetLevel)(PlayLayer*);
 void PlayLayer_resetLevel_H(PlayLayer* self)
 {
-    RBot::getModules().frame = 0;
-    RBot::getModules().time = 0;
-    RBot::getModules().completed = false;
-    PlayLayer_resetLevel(self);
-    if (RBot::getModules().mode == kModeRecording && !isPractice(self)) 
+    auto& m = rbot::getModules();
+
+    self->stopAllActions();
+    if (!m.gameStarted)
     {
-        RBot::getFrameData().clear();
-        RBot::getCheckpointData().clear();
+        m.gameStarted = true;
+        MEMBER_BY_OFFSET(bool, self, PlayLayer__m_cleanReset) = true;
+        getPlayer(self)->setVisible(true);
+        self->scheduleUpdate();
+    }
+
+    m.frame = 0;
+    m.time = 0;
+    m.completed = false;
+    m.playerHitboxes.clear();
+    PlayLayer_resetLevel(self);
+    if (m.mode == kModeRecording && !isPractice(self)) 
+    {
+        rbot::getFrameData().clear();
+        rbot::getCheckpointData().clear();
     }
     
-    if (RBot::getModules().mode == kModeRecording && isPractice(self) && !RBot::getCheckpointData().empty())
+    if (m.mode == kModeRecording && isPractice(self) && !rbot::getCheckpointData().empty())
     {
-        auto frame = RBot::getModules().time;
-        auto& frames /*s*/ = RBot::getFrameData();
+        auto frame = m.time;
+        auto& frames = rbot::getFrameData();
 
         frames.erase(
             std::remove_if(frames.begin(), frames.end(), [frame](const Frame& f)
                 {
-                    return f.frame >= frame;
+                    return f.frame >= frame; // TODO: fix some faulty frames still surviving the filter
                 }
             ), 
         frames.end()
         );
     }
 
-    if (RBot::getModules().mode == kModeRecording && isPractice(self) && RBot::getCheckpointData().empty())
+    if (m.mode == kModeRecording && isPractice(self) && rbot::getCheckpointData().empty())
     {
-        RBot::getFrameData().clear();
+        rbot::getFrameData().clear();
     }
+    self->toggleLayoutMode(LAYOUT_CHECK);
 }
 
 void (*PlayerObject_updateJump)(PlayerObject*, float);
 void PlayerObject_updateJump_H(PlayerObject* self, float dt)
 {
-    if(RBot::getModules().mode != Modes::kModePlaying) PlayerObject_updateJump(self, dt);
+    auto m = rbot::getModules();
+
+    if(m.mode != Modes::kModePlaying) PlayerObject_updateJump(self, dt);
     else
     {
-        if(self->getPositionY() <= 105) self->hitGround(true);
-        else self->hitGround(false);
+        // fix ground particles
+        auto frame = rbot::getFrameData()[m.frame];
+        if(frame.onGround) MEMBER_BY_OFFSET(bool, self, PlayerObject__m_groundParticleOff) = false;
+        else self->deactivateParticle();
     }
 }
 
@@ -178,8 +190,8 @@ void (*PlayLayer_levelComplete)(PlayLayer*);
 void PlayLayer_levelComplete_H(PlayLayer* self)
 {
     PlayLayer_levelComplete(self);
-    RBot::getModules().completed = true;
-    RBot::stopMacro();
+    rbot::getModules().completed = true;
+    rbot::stopMacro();
     CCDirector::sharedDirector()->getScheduler()->setTimeScale(1);
 }
 
@@ -196,8 +208,9 @@ void (*PlayLayer_onQuit)(PlayLayer*);
 void PlayLayer_onQuit_H(PlayLayer* self)
 {
     PlayLayer_onQuit(self);
-    RBot::reset();
-    auto& m = RBot::getModules();
+    rbot::reset();
+    auto& m = rbot::getModules();
+    m.playerHitboxes.clear();
     if(mod::module_by_id<bool>(id::playback_label) && m.playbackLabel)
     {
         m.playbackLabel->release();
@@ -209,37 +222,33 @@ void PlayLayer_onQuit_H(PlayLayer* self)
 void (*CCScheduler_update)(CCScheduler*, float);
 void CCScheduler_update_H(CCScheduler* self, float dt)
 {
-    auto& modules = RBot::getModules();
-    if (modules.stepperOn && !modules.paused && modules.mode == Modes::kModeRecording) {
-        if (dt != 1.0f / 240.0f) return; 
-    }
+    auto& modules = rbot::getModules();
+    if (modules.stepperOn) return; 
 
-    if(!mod::module_by_id<bool>(id::update_on_steps) && !modules.stepperOn)
+    const double physics_step = 1.0 / 240.0;
+    double speed_multiplier = 1.0;
+    if (mod::module_by_id<bool>(id::speedhack) && !modules.paused)
     {
-        modules.dt = dt;
-        CCScheduler_update(self, dt);
-        return;
+        speed_multiplier = static_cast<double>(mod::module_by_id<float>(id::speedhack_val));
     }
 
-    static double accumulator = 0;
-    accumulator += static_cast<double>(dt) * 1;
-    auto delta = 1.0 / 240;
+    static double accumulator = 0.0;
+    accumulator += static_cast<double>(dt) * speed_multiplier;
 
-    auto step_epsilon = delta * 0.001;
-    while (accumulator >= (delta - step_epsilon))
+    if (accumulator > physics_step * 10.0) accumulator = physics_step; 
+
+    while (accumulator >= physics_step)
     {
-        CCScheduler_update(self, static_cast<float>(delta));
-        accumulator -= delta;
+        CCScheduler_update(self, static_cast<float>(physics_step));
+        accumulator -= physics_step;
     }
-    if (accumulator > delta * 5.0) accumulator = 0;
 }
-
 
 bool (*UILayer_init)(UILayer*);
 bool UILayer_init_H(UILayer* self)
 {
     UILayer_init(self);
-    auto& m = RBot::getModules();
+    auto& m = rbot::getModules();
     auto winSize = CCDirector::sharedDirector()->getWinSize();
     if(!m.playbackLabel)
     {
@@ -278,17 +287,26 @@ bool UILayer_init_H(UILayer* self)
 
     self->addChild(menu);
 
-    if(!mod::module_by_id<bool>(id::frame_stepper))
+    if (!mod::module_by_id<bool>(id::frame_stepper))
     {
         menu->setEnabled(false);
         menu->setVisible(false);
     }
+
+    // im finishing this later im kinda tired :yawning_face:
+    auto btnExt = CCMenuItemExt::createWithSpriteExtra(
+        CCSprite::createWithSpriteFrameName("GJ_timeIcon_001.png"),
+        [self, m](CCObject*)
+        {
+            mod_map[id::speedhack] = !mod::module_by_id<bool>(id::speedhack);
+        }
+    );
     return true;
 }
 
 void UILayer::onStepper(CCObject*)
 {
-    auto& m = RBot::getModules();
+    auto& m = rbot::getModules();
     auto pl = GameManager::sharedState()->getPlayLayer();
     if (!pl) return;
 
@@ -303,7 +321,7 @@ void UILayer::onStepper(CCObject*)
 
 void UILayer::disableStepper(CCObject*)
 {
-    auto& m = RBot::getModules();
+    auto& m = rbot::getModules();
     m.stepperOn = false;
     
     if(mod::module_by_id<bool>(id::speedhack)) {
@@ -317,14 +335,19 @@ void (*PlayLayer_storeCheckpoint)(PlayLayer* self, void* checkpoint);
 void PlayLayer_storeCheckpoint_H(PlayLayer* self, void* checkpoint)
 {
     PlayLayer_storeCheckpoint(self, checkpoint);
-    RBot::getCheckpointData().push_back({static_cast<double>(RBot::getModules().time), MEMBER_BY_OFFSET(double, getPlayer(self), PlayerObject__m_yVelocity), MEMBER_BY_OFFSET(double, getPlayer(self), PlayerObject__m_gravity)});
+    rbot::getCheckpointData().push_back({
+        static_cast<double>(rbot::getModules().time), 
+        MEMBER_BY_OFFSET(double, getPlayer(self), PlayerObject__m_yVelocity), 
+        MEMBER_BY_OFFSET(double, getPlayer(self), PlayerObject__m_gravity),
+        getPlayer(self)->getRotation()
+    });
 }
 
 void (*PlayLayer_removeLastCheckpoint)(PlayLayer* self);
 void PlayLayer_removeLastCheckpoint_H(PlayLayer* self)
 {
     PlayLayer_removeLastCheckpoint(self);
-    auto& checkpoints = RBot::getCheckpointData();
+    auto& checkpoints = rbot::getCheckpointData();
     if(!checkpoints.empty()) checkpoints.pop_back();
 }
 
@@ -332,14 +355,15 @@ void (*PlayLayer_loadLastCheckpoint)(PlayLayer* self);
 void PlayLayer_loadLastCheckpoint_H(PlayLayer* self)
 {
     PlayLayer_loadLastCheckpoint(self);
-    auto& checkpoints = RBot::getCheckpointData();
+    auto& checkpoints = rbot::getCheckpointData();
     if(!checkpoints.empty())
     {
-        auto& modules = RBot::getModules();
+        auto& modules = rbot::getModules();
         modules.time = checkpoints.back().frame;
 
         MEMBER_BY_OFFSET(double, getPlayer(self), PlayerObject__m_yVelocity) = checkpoints.back().yVelocity;
         MEMBER_BY_OFFSET(double, getPlayer(self), PlayerObject__m_gravity) = checkpoints.back().gravity;
+        getPlayer(self)->setRotation(checkpoints.back().rotation);
     }
 }
 
@@ -347,8 +371,12 @@ bool (*PlayLayer_init)(PlayLayer*, GJGameLevel*);
 bool PlayLayer_init_H(PlayLayer* self, GJGameLevel* lvl)
 {
     PlayLayer_init(self, lvl);
+
+    rbot::getModules().gameStarted = false;
+    
     MEMBER_BY_OFFSET(CCLayer*, self, PlayLayer__m_gameLayer)->addChild(PlayHitboxLayer::create(self), 9999);
     self->toggleLayoutMode(LAYOUT_CHECK);
+    
     return true;
 }
 
@@ -375,21 +403,22 @@ void PlayLayer_toggleFlipped_H(PlayLayer* self, bool direction, bool doFlip)
     if(!mod::module_by_id<bool>(id::disable_mirror_portals)) PlayLayer_toggleFlipped(self, direction, doFlip);
 }
 
-void (*UILayer_ccTouchBegan)(UILayer*, CCTouch*, CCEvent*);
-void UILayer_ccTouchBegan_H(UILayer* self, CCTouch* touch, CCEvent* event)
+bool (*UILayer_ccTouchBegan)(UILayer*, CCTouch*, CCEvent*);
+bool UILayer_ccTouchBegan_H(UILayer* self, CCTouch* touch, CCEvent* event)
 {
     UILayer_ccTouchBegan(self, touch, event);
-    auto m = RBot::getModules();
+    auto m = rbot::getModules();
     if(m.mode == Modes::kModeRecording)
     {
         m.usedFrame->click = true;
     }
 
-    if(m.mode != Modes::kModePlaying)
+    if(m.mode != Modes::kModePlaying && mod::module_by_id<bool>(id::click_sounds))
     {
         auto sound = GameSoundManager::sharedManager();
         sound->playEffect(m.soundPath.c_str(), 1, 0, 1);
     }
+    return true;
 }
 
 void PlayLayer::toggleLayoutMode(bool enabled)
@@ -458,8 +487,16 @@ void PlayerObject_playerDestroyed_H(PlayerObject* self) {
   if(!mod::module_by_id<bool>(id::no_death_effect)) PlayerObject_playerDestroyed(self);
 }
 
+void (*PlayLayer_resume)(PlayLayer*);
+void PlayLayer_resume_H(PlayLayer* self)
+{
+    PlayLayer_resume(self);
+    self->toggleLayoutMode(LAYOUT_CHECK);
+}
+
 void bot_hook()
 {
+    HOOK("_ZN9PlayLayer6resumeEv", PlayLayer_resume_H, PlayLayer_resume);
     HOOK("_ZN12PlayerObject15playerDestroyedEv", PlayerObject_playerDestroyed_H, PlayerObject_playerDestroyed);
     HOOK("_ZN9PlayLayer16tintColorObjectsEN7cocos2d10_ccColor3BEf", PlayLayer_tintColorObjects_H, PlayLayer_tintColorObjects); // 1.7
     HOOK("_ZN9PlayLayer17updateLevelColorsEv", PlayLayer_updateLevelColors_H, PlayLayer_updateLevelColors); // 1.6

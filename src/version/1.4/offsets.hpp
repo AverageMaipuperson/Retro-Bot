@@ -9,6 +9,8 @@
 #define PlayLayer__m_cameraPos            0x244  // PlayLayer::getCameraPos
 #define PlayLayer__m_objects              0x184  // PlayLayer::init (first CCArray::create call after setSecondColor)
 #define PlayLayer__m_gameLayer            0x270  // PlayLayer::getGameLayer
+#define PlayLayer__m_cleanReset           0x27b  // PlayLayer::getCleanReset
+#define PlayLayer__m_isFlipped            0x22c  // PlayLayer::getIsFlipped
 
 ///////////////////////////////////////////////////////
 /*                    PlayerObject                   */
@@ -17,6 +19,7 @@
 #define PlayerObject__m_gravity           0x370  // PlayerObject::gravityUp
 #define PlayerObject__m_yVelocity         0x390  // PlayerObject::hitGround (first line)
 #define PlayerObject__m_onGround          0x3e0  // PlayerObject::getOnGround
+#define PlayerObject__m_groundParticleOff 0x384  // PlayerObject::deactivateParticle
 
 ///////////////////////////////////////////////////////
 /*                  CCTextInputNode                  */

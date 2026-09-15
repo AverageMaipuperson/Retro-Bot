@@ -1,8 +1,8 @@
 #include "EndLevelLayer.hpp"
-#include "other/hooking.h"
+#include "hooking.hpp"
 #include "TextArea.hpp"
 #include "tools.hpp"
-#include "RBot.h"
+#include "rbot.hpp"
 
 char* (*EndLevelLayer_getEndText)(EndLevelLayer*);
 char* EndLevelLayer_getEndText_H(EndLevelLayer*)

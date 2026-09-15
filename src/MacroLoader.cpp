@@ -1,5 +1,5 @@
-#include "rbot/RBot.h"
-#include "rbot/MacroLoader.h"
+#include "rbot.hpp"
+#include "MacroLoader.hpp"
 #include "tools.hpp"
 #include <vector>
 #include <algorithm>
@@ -36,9 +36,7 @@ std::vector<Frame> MacroLoader::readJson(char const* jsonContent)
 
     document.Parse<rapidjson::kParseFullPrecisionFlag>(jsonContent);
 
-    if (!document.IsObject()) {
-        return frames;
-    }
+    if (!document.IsObject()) return frames;
 
     for (auto it = document.MemberBegin(); it != document.MemberEnd(); ++it)
     {
@@ -53,6 +51,7 @@ std::vector<Frame> MacroLoader::readJson(char const* jsonContent)
         frame.position.y = static_cast<float>(obj["y"].GetDouble());
         frame.rotation = static_cast<float>(obj["rot"].GetDouble());
         frame.flipY = static_cast<float>(obj["flip"].GetDouble());
+        frame.click = static_cast<bool>(obj["click"].GetBool());
 
         frames.push_back(frame);
     }
@@ -76,7 +75,7 @@ void MacroLoader::loadFile(char const* macroName) {
     std::string json((std::istreambuf_iterator<char>(inputFile)), std::istreambuf_iterator<char>());
     inputFile.close();
 
-    auto& actions = RBot::getFrameData();
+    auto& actions = rbot::getFrameData();
     actions = readJson(json.c_str());
 
     if(actions.empty()) {
@@ -101,7 +100,6 @@ void MacroLoader::loadFile(char const* macroName) {
     )->show();
     m_parent->updateLabel();
 }
-
 
 std::vector<File> MacroLoader::getMacros()
 {
@@ -157,13 +155,13 @@ bool MacroLoader::init()
     leftParent->setPosition(winSize.width / 2, winSize.height / 2);
 
     CCRect rect = CCRectMake(0, 0, 80, 80);
-    cocos2d::extension::CCScale9Sprite* panel = cocos2d::extension::CCScale9Sprite::create("GJ_square01-hd.png", rect);
+    cocos2d::extension::CCScale9Sprite* panel = cocos2d::extension::CCScale9Sprite::create("rbot_square.png", rect);
     panel->setContentSize(CCSizeMake(winSize.width - 75, winSize.height - 25));
     leftParent->addChild(panel);
     panel->setPosition({0.f, 0.f});
 
     auto menu = CCMenu::create();
-    auto spr = CCSprite::createWithSpriteFrameName("GJ_closeBtn_001.png");
+    auto spr = CCSprite::create("rbot_close.png");
     auto btn = CCMenuItemSpriteExtra::create(spr, spr, this, menu_selector(MacroLoader::keyBackClicked));
     btn->setPosition({-50,-25});
     menu->setPosition({winSize.width, winSize.height});
@@ -186,20 +184,20 @@ bool MacroLoader::init()
     for (const auto& file : m_files)
     {
         if(i > 5) break;
-        panel = cocos2d::extension::CCScale9Sprite::create("square02_small.png", {0,0,40,40});
+        panel = cocos2d::extension::CCScale9Sprite::create("rbot_square.png", {0,0,80,80});
         panel->setContentSize(CCSizeMake(winSize.width / 2, 40));
         panel->setPosition(ccp(winSize.width / 2, winSize.height - 50 - y));
         panel->setOpacity(127);
 
-        auto label = CCLabelBMFont::create(file.name.c_str(), "goldFont.fnt");
+        auto label = CCLabelBMFont::create(file.name.c_str(), "BoonBoldItalic.fnt");
         limitLabelWidth(label, 200);
         label->setPosition(ccp(20, 20));
         label->setAnchorPoint(ccp(0, .5f));
-        label->setScale(.5f);
+        label->setScale(.9f);
         panel->addChild(label);
 
         auto spr = ButtonSprite::create(
-            "Load", 100, 0, 1, false, "goldFont.fnt", "GJ_button_01-hd.png"
+            "Load", 100, 0, 1, false, "BoonBoldItalic.fnt", "rbot_btn01.png"
         );
         spr->setScale(.75f);
 
@@ -282,20 +280,20 @@ void MacroLoader::changePage(int page)
             if(i > m_files.size()) break;
             auto file = m_files[i];
 
-            auto panel = cocos2d::extension::CCScale9Sprite::create("square02_small.png", {0,0,40,40});
+            auto panel = cocos2d::extension::CCScale9Sprite::create("rbot_square.png", {0,0,80,80});
             panel->setContentSize(CCSizeMake(winSize.width / 2, 40));
             panel->setPosition(ccp(winSize.width / 2, winSize.height - 50 - y));
             panel->setOpacity(127);
 
-            auto label = CCLabelBMFont::create(file.name.c_str(), "goldFont.fnt");
+            auto label = CCLabelBMFont::create(file.name.c_str(), "BoonBoldItalic.fnt");
             limitLabelWidth(label, 200);
             label->setPosition(ccp(20, 20));
             label->setAnchorPoint(ccp(0, .5f));
-            label->setScale(.5f);
+            label->setScale(.9f);
             panel->addChild(label);
 
             auto spr = ButtonSprite::create(
-                "Load", 100, 0, 1, false, "goldFont.fnt", "GJ_button_01-hd.png"
+                "Load", 100, 0, 1, false, "BoonBoldItalic.fnt", "rbot_btn01.png"
             );
             spr->setScale(.75f);
 

@@ -9,6 +9,8 @@
 #define PlayLayer__m_realPosition         0x1e8  // PlayLayer::update (first cocos2d::CCPoint::operator= call)
 #define PlayLayer__m_objects              0x18c  // PlayLayer::init (first CCArray::create call after setSecondColor)
 #define PlayLayer__m_gameLayer            0x258  // PlayLayer::getGameLayer
+#define PlayLayer__m_cleanReset           0x25f  // PlayLayer::getCleanReset
+#define PlayLayer__m_isFlipped            0x214  // PlayLayer::getIsFlipped
 
 ///////////////////////////////////////////////////////
 /*                    PlayerObject                   */
@@ -17,6 +19,7 @@
 #define PlayerObject__m_gravity           0x350  // PlayerObject::gravityUp
 #define PlayerObject__m_yVelocity         0x370  // PlayerObject::hitGround (first line)
 #define PlayerObject__m_onGround          0x35e  // PlayerObject::getOnGround
+#define PlayerObject__m_groundParticleOff 0x365  // PlayerObject::deactivateParticle
 
 ///////////////////////////////////////////////////////
 /*                  CCTextInputNode                  */

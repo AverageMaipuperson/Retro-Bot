@@ -1,5 +1,5 @@
-#include "rbot/RBot.h"
-#include "rbot/MacroSaver.h"
+#include "rbot.hpp"
+#include "MacroSaver.hpp"
 #include "tools.hpp"
 #include "robtop/ButtonSprite.hpp"
 #include <vector>
@@ -17,7 +17,7 @@
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
-#include "Toggler.h"
+#include "Toggler.hpp"
 using namespace cocos2d;
 
 #define MEMBER_BY_OFFSET(type, var, offset) \
@@ -43,7 +43,7 @@ std::string MacroSaver::framesToJson()
     rapidjson::Document document;
     document.SetObject();
     auto& allocator = document.GetAllocator();
-    for(const Frame& frame : RBot::getFrameData())
+    for(const Frame& frame : rbot::getFrameData())
     {
         std::string str = fmt::format("{}", frame.frame);
         rapidjson::Value key;
@@ -54,6 +54,7 @@ std::string MacroSaver::framesToJson()
         obj.AddMember("y", frame.position.y, allocator);
         obj.AddMember("rot", frame.rotation, allocator);
         obj.AddMember("flip", frame.flipY, allocator);
+        obj.AddMember("click", frame.click, allocator);
 
         document.AddMember(key, obj, allocator);
     }
@@ -68,7 +69,7 @@ std::string MacroSaver::framesToJson()
 
 void MacroSaver::saveFile()
 {
-    if(RBot::getFrameData().empty())
+    if(rbot::getFrameData().empty())
     {
         FLAlertLayer::create(
             nullptr,
@@ -152,18 +153,17 @@ bool MacroSaver::init()
     contentHolder->addChild(leftParent);
     leftParent->setPosition(winSize.width / 2, winSize.height / 2);
 
-
     CCRect rect = CCRectMake(0, 0, 80, 80);
-    cocos2d::extension::CCScale9Sprite* panel = cocos2d::extension::CCScale9Sprite::create("GJ_square01-hd.png", rect);
+    cocos2d::extension::CCScale9Sprite* panel = cocos2d::extension::CCScale9Sprite::create("rbot_square.png", rect);
     panel->setContentSize(CCSizeMake(winSize.width - 75, winSize.height / 2));
     leftParent->addChild(panel);
 
-    this->m_textInput = CCTextInputNode::create(panel->getContentSize().width, 40.0, "Macro Name", "Thonburi", 15, "chatFont.fnt");
+    this->m_textInput = CCTextInputNode::create(panel->getContentSize().width, 40.0, "Macro Name", "Thonburi", 15, "BoonBoldItalic.fnt");
     MEMBER_BY_OFFSET(void*, m_textInput, 0x16c) = nullptr; 
     MEMBER_BY_OFFSET(cocos2d::CCTextFieldTTF*, this->m_textInput, CCTextInputNode__m_textField)->setOpacity(200);
     this->m_textInput->setPosition(ccp(winSize.width / 2, winSize.height / 2 + 50));
-    this->m_textInput->setMaxLabelScale(1);
-    this->m_textInput->setLabelPlaceholderScale(1);
+    this->m_textInput->setMaxLabelScale(1.5);
+    this->m_textInput->setLabelPlaceholderScale(1.5);
     this->m_textInput->setScale(0.5f);
     setCharLimit(this->m_textInput, 20);
     setAllowedChars(this->m_textInput, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789. ");
@@ -171,9 +171,9 @@ bool MacroSaver::init()
     contentHolder->addChild(this->m_textInput, 100);
     this->m_textInput->setString(fmt::format("{}", GameManager::sharedState()->getPlayLayer()->getLevel()->m_sLevelName).c_str());
 
-    auto label = CCLabelBMFont::create(".gdr", "chatFont.fnt");
+    auto label = CCLabelBMFont::create(".gdr", "BoonBoldItalic.fnt");
     label->setPosition(ccp(winSize.width / 1.5 + 40, m_textInput->getPosition().y));
-    label->setScale(.5f);
+    label->setScale(1.f);
     contentHolder->addChild(label);
 
     auto bg = extension::CCScale9Sprite::create("square02_001.png", CCRectMake(0,0,80,80));
@@ -183,11 +183,12 @@ bool MacroSaver::init()
     bg->setOpacity(127);
     contentHolder->addChild(bg);
     bg->setScale(0.5f);
+    bg->setColor(ccWHITE);
 
     auto toolsMenu = CCMenu::create();
 
     auto saveBtnSprite = ButtonSprite::create(
-        "Save Macro", 100, 0, 1, false, "goldFont.fnt", "GJ_button_01-hd.png"
+        "Save Macro", 100, 0, 1, false, "BoonBoldItalic.fnt", "rbot_btn01.png"
     );
   
     auto saveBtn = CCMenuItemSpriteExtra::create(
@@ -198,7 +199,7 @@ bool MacroSaver::init()
     );
     saveBtn->setPosition(CCPointZero); 
     auto cancelBtnSprite = ButtonSprite::create(
-        "Cancel", 100, 0, 1, false, "goldFont.fnt", "GJ_button_01-hd.png"
+        "Cancel", 100, 0, 1, false, "BoonBoldItalic.fnt", "rbot_btn01.png"
     );
   
     auto cancelBtn = CCMenuItemSpriteExtra::create(

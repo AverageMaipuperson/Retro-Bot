@@ -10,6 +10,8 @@
 #define PlayLayer__m_objects              0x184  // PlayLayer::init (first CCArray::create call after setSecondColor)
 #define PlayLayer__m_gameLayer            0x260  // PlayLayer::getGameLayer
 #define PlayLayer__m_isFlipped            0x21c  // PlayLayer::getIsFlipped
+#define PlayLayer__m_cleanReset           0x267  // PlayLayer::getCleanReset
+#define PlayLayer__m_isFlipped            0x21c  // PlayLayer::getIsFlipped
 
 ///////////////////////////////////////////////////////
 /*                    PlayerObject                   */
@@ -18,6 +20,7 @@
 #define PlayerObject__m_gravity           0x358  // PlayerObject::gravityUp
 #define PlayerObject__m_yVelocity         0x378  // PlayerObject::hitGround (first line)
 #define PlayerObject__m_onGround          0x430  // PlayerObject::getOnGround
+#define PlayerObject__m_groundParticleOff 0x36d  // PlayerObject::deactivateParticle
 
 ///////////////////////////////////////////////////////
 /*                  CCTextInputNode                  */

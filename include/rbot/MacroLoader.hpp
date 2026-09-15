@@ -3,29 +3,27 @@
 #include <vector>
 #include "robtop/CCBlockLayer.h"
 #include "rbot.hpp"
+#include "RBotLayer.hpp"
 #include "Toggler.hpp"
 #include "robtop/CCTextInputNode.hpp"
 #include "robtop/FLAlertLayer.hpp"
-#include "RBotLayer.hpp"
 using namespace cocos2d;
 
-class ClickLoader : public CCLayer, public FLAlertLayerProtocol {
+class MacroLoader : public CCLayer, public FLAlertLayerProtocol {
 public:
     RBotLayer* m_parent;
     CCTextInputNode* m_textInput;
     CCTextInputNode* m_textInput2;
     std::vector<File>(m_files);
     CCLayer* m_mainLayer;
-    std::vector<CCNode*> m_musicSprites;
-    std::vector<CCNode*> m_useSprites;
-    std::vector<CCMenuItemExt*> m_useBtns;
     int m_page;
-    static ClickLoader* create(RBotLayer*);
+    static MacroLoader* create(RBotLayer*);
     virtual bool init();
     virtual void keyBackClicked() override;
+    void toggle(CCObject*);
     void loadFile(char const *);
     void FLAlert_Clicked(FLAlertLayer*, bool) final;
     void changePage(int);
     std::vector<Frame> readJson(char const*);
-    std::vector<File> getFiles();
+    std::vector<File> getMacros();
 };

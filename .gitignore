@@ -3,6 +3,8 @@
 command.txt
 *.jks
 .vscode/
+vendor/Dobby/*
+*/x264
 
 # Prerequisites
 *.d

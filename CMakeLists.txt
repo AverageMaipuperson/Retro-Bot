@@ -21,7 +21,7 @@ else()
 endif()
 
 # add_compile_options(-include "src/ndk.hpp")
-file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.cpp src/*.cc)
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.cpp src/*.cc vendor/KittyMemory/*.cpp)
 list(FILTER SOURCES EXCLUDE REGEX "src/features/")
 add_library(rbot SHARED ${SOURCES})
 
@@ -37,7 +37,6 @@ target_include_directories(rbot PUBLIC include/cocos)
 target_include_directories(rbot PUBLIC include/robtop)
 
 target_include_directories(rbot PUBLIC include/KittyMemory)
-
 
 if(GAME_VERSION GREATER 16)
 target_include_directories(rbot PUBLIC include/cocos/cocos2d-2.2.3/cocos2dx/include)
@@ -76,11 +75,13 @@ target_include_directories(rbot PUBLIC include)
 
 target_include_directories(rbot PUBLIC include/rbot)
 
+target_include_directories(rbot PUBLIC include/rbot/base)
+
 target_include_directories(rbot PUBLIC include/version)
 
 target_include_directories(rbot PUBLIC include/custom_nodes)
 
-target_include_directories(rbot PUBLIC include/mod)
+target_include_directories(rbot PUBLIC include/rbot/mod)
 
 target_include_directories(rbot PUBLIC src)
 
@@ -96,7 +97,8 @@ set(DCMAKE_BUILD_TYPE Debug)
 set(DOBBY_DEBUG OFF CACHE INTERNAL "" FORCE)
 set(DOBBY_GENERATE_SHARED OFF CACHE INTERNAL "" FORCE)
 add_definitions(-DLOGGING_DISABLE -DNDEBUG)
-add_subdirectory(include/Dobby)
+add_subdirectory(vendor/Dobby)
+set(DOBBY_TARGET_OS "Windows")
 
 target_compile_definitions(rbot PRIVATE FMT_HEADER_ONLY=1)
 

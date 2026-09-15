@@ -32,5 +32,7 @@
 #include "GameObject.hpp"
 #include "PlayerObject.hpp"
 #include "FLAlertLayer.hpp"
+#include "CCTextInputNode.hpp"
+#include "PauseLayer.hpp"
 
 #endif

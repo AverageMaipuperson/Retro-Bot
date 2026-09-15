@@ -4,20 +4,19 @@
 #include "mod.hpp"
 #include "offsets.hpp"
 #include "tools.hpp"
+#include "rbot.hpp"
 using namespace cocos2d;
 
 #define MEMBER_BY_OFFSET(type, var, offset) \
     (*reinterpret_cast<type*>(reinterpret_cast<uintptr_t>(var) + static_cast<uintptr_t>(offset)))
 
-inline void drawRect(CCRect rect) {
-    CCPoint bottomLeft = ccp(rect.origin.x + 0.75f, rect.origin.y + 0.75f);
-    CCPoint topRight = ccp(rect.origin.x + rect.size.width - 0.75f, 
-                           rect.origin.y + rect.size.height - 0.75f);
+inline void drawRect(CCRect rect)
+{
+    auto bottomLeft = ccp(rect.origin.x + 0.75f, rect.origin.y + 0.75f);
+    auto topRight = ccp(rect.origin.x + rect.size.width - 0.75f, rect.origin.y + rect.size.height - 0.75f);
     
     ccDrawRect(bottomLeft, topRight);
 }
-
-
 
 class PlayHitboxLayer : public CCLayer {
 public:
@@ -129,16 +128,40 @@ public:
 
         auto player = getPlayer(m_levelLayer);
         if (player && mod::module_by_id<bool>(id::show_hitboxes)) {
-            auto hazardRect = player->getObjectRect();
+            PlayerHitbox hitbox{player->getObjectRect(), player->getObjectRect(0.3f, 0.3f)};
+
+            auto hazardRect = hitbox.hazardRect;
             hazardRect.origin = ccp(hazardRect.origin.x, hazardRect.origin.y);
             ccDrawColor4B(255, 255, 0, 255);
             drawRect(hazardRect);
 
-            CCRect blockRect = player->getObjectRect(.3f, .3f);
+            auto blockRect = hitbox.blockRect;
             blockRect.origin = ccp(blockRect.origin.x, blockRect.origin.y);
             ccDrawColor4B(0, 0, 255, 255);
             drawRect(blockRect);
 
+            // rbotOpened only exists to prevent copious amounts of lag when browsing the menu
+            if(mod::module_by_id<bool>(id::hitbox_trail) && !rbot::getModules().rbotOpened)
+            {
+                auto& hitboxes = rbot::getModules().playerHitboxes;
+                hitboxes.push_back(hitbox);
+
+                // stop deleting my hitboxes!!!
+                if (hitboxes.size() > 100 && !rbot::getModules().paused && !rbot::getModules().dead) hitboxes.erase(hitboxes.begin(), hitboxes.end() - 100);
+
+                for(const auto& pHitbox : hitboxes)
+                {
+                    auto hazardRect = pHitbox.hazardRect;
+                    hazardRect.origin = ccp(hazardRect.origin.x, hazardRect.origin.y);
+                    ccDrawColor4B(255, 255, 0, 255);
+                    drawRect(hazardRect);
+
+                    auto blockRect = pHitbox.blockRect;
+                    blockRect.origin = ccp(blockRect.origin.x, blockRect.origin.y);
+                    ccDrawColor4B(0, 0, 255, 255);
+                    drawRect(blockRect);
+                }
+            }
         }
     }
 };
@@ -237,15 +260,21 @@ void drawHitboxes(PlayLayer* self) {
 
     auto player = getPlayer(self);
     if (player && mod::module_by_id<bool>(id::show_hitboxes)) {
-        auto hazardRect = player->getObjectRect();
+        PlayerHitbox hitbox{player->getObjectRect(), player->getObjectRect(0.3f, 0.3f)};
+
+        auto hazardRect = hitbox.hazardRect;
         hazardRect.origin = ccp(hazardRect.origin.x, hazardRect.origin.y);
         ccDrawColor4B(255, 255, 0, 255);
         drawRect(hazardRect);
 
-        CCRect blockRect = player->getObjectRect(0.3f, 0.3f);
+        auto blockRect = hitbox.blockRect;
         blockRect.origin = ccp(blockRect.origin.x, blockRect.origin.y);
         ccDrawColor4B(0, 0, 255, 255);
         drawRect(blockRect);
 
+        if(mod::module_by_id<bool>(id::hitbox_trail))
+        {
+            
+        }
     }
 }
