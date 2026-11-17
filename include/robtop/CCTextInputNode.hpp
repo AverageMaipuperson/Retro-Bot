@@ -17,6 +17,7 @@ public:
 
     void setMaxLabelScale(float scale);
     void setLabelPlaceholderScale(float scale);
+    void onClickTrackNode(bool);
 	std::string * m_pInputText;
 
 	std::string getTextField();

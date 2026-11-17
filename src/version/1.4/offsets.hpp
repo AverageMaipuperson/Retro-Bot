@@ -20,6 +20,7 @@
 #define PlayerObject__m_yVelocity         0x390  // PlayerObject::hitGround (first line)
 #define PlayerObject__m_onGround          0x3e0  // PlayerObject::getOnGround
 #define PlayerObject__m_groundParticleOff 0x384  // PlayerObject::deactivateParticle
+#define PlayerObject__m_unk               0x388  // PlayerObject::playerDestroyed
 
 ///////////////////////////////////////////////////////
 /*                  CCTextInputNode                  */

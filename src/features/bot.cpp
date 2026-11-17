@@ -8,6 +8,7 @@
 #include "PlayHitboxLayer.hpp"
 #include "GameSoundManager.hpp"
 #include "init.hpp"
+#include "CheckpointObject.hpp"
 
 void createPlaybackLabel()
 {
@@ -26,7 +27,7 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
     auto& modules = rbot::getModules();
     modules.paused = false;
 
-    if(mod::module_by_id<bool>(id::frame_stepper))
+    if (mod::module_by_id<bool>(id::frame_stepper))
     {
         modules.stepperMenu->setEnabled(true);
         modules.stepperMenu->setVisible(true);
@@ -38,19 +39,24 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
         modules.stepperOn = false;
     }
 
-    const float step = 1.0f / 240.0f;
-    dt = step;
+    auto step = 1.f / 240.f;
+    if (modules.stepperOn)
+        dt = step;
+
     if (modules.stepperOn && dt != step) {
-        PlayLayer_update(self, 0); 
+        PlayLayer_update(self, 0);
         return;
     }
 
-    if (modules.stepperOn || (mod::module_by_id<bool>(id::update_on_steps) && modules.mode == Modes::kModeRecording)) dt = step;
+    if (modules.stepperOn || (mod::module_by_id<bool>(id::update_on_steps) && modules.mode == Modes::kModeRecording))
+        dt = step;
 
     auto& data = rbot::getFrameData();
 
     if (modules.mode == Modes::kModePlaying)
     {
+        // i have to advance every input by one frame for some reason, it will work trust
+        auto oldTime = modules.time;
         modules.time += dt;
 
         if (data.empty())
@@ -60,34 +66,34 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
             return;
         }
 
-        int index = 0;
-        while (index < data.size() - 1 && data[index].frame < modules.time)
+        auto eps = 1e-6;
+        while (modules.frame < static_cast<int>(data.size()) && data[modules.frame].frame <= oldTime + eps)
         {
-            index++;
+            auto frame = data[modules.frame];
+
+            if (frame.click)
+                getPlayer(self)->pushButton(Button1);
+            if (frame.release)
+                getPlayer(self)->releaseButton(Button1);
+
+            if (mod::module_by_id<bool>(id::click_sounds))
+            {
+                auto sound = GameSoundManager::sharedManager();
+                if (frame.click)
+                    sound->playEffect(modules.soundPath.c_str(), 1, 0, 1);
+                else if (frame.release)
+                    sound->playEffect(modules.releasePath.c_str(), 1, 0, 1);
+            }
+
+            modules.frame++;
         }
 
-        if (index >= data.size() - 1)
+        if (modules.frame >= static_cast<int>(data.size()))
         {
             rbot::stopMacro();
             PlayLayer_update(self, dt);
             return;
         }
-
-        auto frame = data[index];
-
-        getPlayer(self)->setPosition(frame.position);
-        getPlayer(self)->setLastP(frame.position);
-        MEMBER_BY_OFFSET(CCPoint, self, PlayLayer__m_realPosition) = frame.position;
-        getPlayer(self)->setRotation(frame.rotation);
-        getPlayer(self)->setScaleY(frame.flipY);
-
-        if(mod::module_by_id<bool>(id::click_sounds) && frame.click)
-        {
-            auto sound = GameSoundManager::sharedManager();
-            sound->playEffect(modules.soundPath.c_str(), 1, 0, 1);
-        }
-        
-        modules.frame = index;
     }
 
     PlayLayer_update(self, dt);
@@ -97,14 +103,14 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
         if (modules.completed) rbot::stopMacro();
 
         auto pos = MEMBER_BY_OFFSET(CCPoint, self, PlayLayer__m_realPosition);
-        if (MEMBER_BY_OFFSET(bool, self, PlayLayer__m_isFlipped)) // yes mirror portals exist in 1.0
+        if (MEMBER_BY_OFFSET(bool, self, PlayLayer__m_isFlipped))
         {
             auto winSize = CCDirector::sharedDirector()->getWinSize();
             auto center = winSize.width / 2;
             pos.x = (pos.x - center) + winSize.width - center;
         }
-        
-        modules.time += dt;
+
+        modules.time += dt; // keep this consistent with playback
         rbot::getFrameData().push_back({
             modules.time,
             getPlayer(self)->getScaleY(),
@@ -114,14 +120,23 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
             false,
             MEMBER_BY_OFFSET(bool, getPlayer(self), PlayerObject__m_onGround)
         });
+
         modules.frame++;
         modules.usedFrame = &rbot::getFrameData().back();
     }
 
-    if(mod::module_by_id<bool>(id::playback_label) && modules.mode == kModePlaying)
+    if (mod::module_by_id<bool>(id::playback_label) && modules.mode == kModePlaying)
     {
         modules.playbackLabel->setVisible(true);
-    } else modules.playbackLabel->setVisible(false);
+    }
+    else
+    {
+        modules.playbackLabel->setVisible(false);
+    }
+
+    self->toggleLayoutMode(LAYOUT_CHECK);
+    if (LAYOUT_CHECK != modules.lastLayoutState)
+        modules.lastLayoutState = LAYOUT_CHECK;
 }
 
 void (*PlayLayer_resetLevel)(PlayLayer*);
@@ -176,6 +191,8 @@ void PlayerObject_updateJump_H(PlayerObject* self, float dt)
 {
     auto m = rbot::getModules();
 
+    PlayerObject_updateJump(self, dt);
+/*
     if(m.mode != Modes::kModePlaying) PlayerObject_updateJump(self, dt);
     else
     {
@@ -184,6 +201,7 @@ void PlayerObject_updateJump_H(PlayerObject* self, float dt)
         if(frame.onGround) MEMBER_BY_OFFSET(bool, self, PlayerObject__m_groundParticleOff) = false;
         else self->deactivateParticle();
     }
+*/
 }
 
 void (*PlayLayer_levelComplete)(PlayLayer*);
@@ -223,19 +241,16 @@ void (*CCScheduler_update)(CCScheduler*, float);
 void CCScheduler_update_H(CCScheduler* self, float dt)
 {
     auto& modules = rbot::getModules();
-    if (modules.stepperOn) return; 
+    if (modules.stepperOn) return;
 
-    const double physics_step = 1.0 / 240.0;
-    double speed_multiplier = 1.0;
+    constexpr auto physics_step = 1.0 / 240.0;
+    static auto accumulator = 0.0;
+
+    double speed = 1.0;
     if (mod::module_by_id<bool>(id::speedhack) && !modules.paused)
-    {
-        speed_multiplier = static_cast<double>(mod::module_by_id<float>(id::speedhack_val));
-    }
+        speed = mod::module_by_id<float>(id::speedhack_val);
 
-    static double accumulator = 0.0;
-    accumulator += static_cast<double>(dt) * speed_multiplier;
-
-    if (accumulator > physics_step * 10.0) accumulator = physics_step; 
+    accumulator += static_cast<double>(dt) * speed;
 
     while (accumulator >= physics_step)
     {
@@ -339,7 +354,9 @@ void PlayLayer_storeCheckpoint_H(PlayLayer* self, void* checkpoint)
         static_cast<double>(rbot::getModules().time), 
         MEMBER_BY_OFFSET(double, getPlayer(self), PlayerObject__m_yVelocity), 
         MEMBER_BY_OFFSET(double, getPlayer(self), PlayerObject__m_gravity),
-        getPlayer(self)->getRotation()
+        getPlayer(self)->getRotation(),
+        MEMBER_BY_OFFSET(CCPoint, self, PlayLayer__m_realPosition),
+        MEMBER_BY_OFFSET(float, getPlayer(self), PlayerObject__m_unk)
     });
 }
 
@@ -360,12 +377,42 @@ void PlayLayer_loadLastCheckpoint_H(PlayLayer* self)
     {
         auto& modules = rbot::getModules();
         modules.time = checkpoints.back().frame;
+        if (modules.mode == Modes::kModePlaying)
+        {
+            auto& data = rbot::getFrameData();
+            modules.frame = static_cast<int>(
+                std::lower_bound(data.begin(), data.end(), modules.time,
+                [](const Frame& f, double time) { return f.frame < time; }) - data.begin()
+            );
+        }
 
         MEMBER_BY_OFFSET(double, getPlayer(self), PlayerObject__m_yVelocity) = checkpoints.back().yVelocity;
         MEMBER_BY_OFFSET(double, getPlayer(self), PlayerObject__m_gravity) = checkpoints.back().gravity;
         getPlayer(self)->setRotation(checkpoints.back().rotation);
+        MEMBER_BY_OFFSET(CCPoint, self, PlayLayer__m_realPosition) = checkpoints.back().position;
+        MEMBER_BY_OFFSET(float, getPlayer(self), PlayerObject__m_unk) = checkpoints.back().unk;
     }
 }
+
+#if GAME_VERSION < V1P4
+void (*PlayLayer_visit_t)(PlayLayer*) = nullptr;
+void PlayLayer_visit(PlayLayer* self)
+{
+    PlayLayer_visit_t(self);
+
+    auto gameLayer = MEMBER_BY_OFFSET(CCLayer*, self, PlayLayer__m_gameLayer);
+
+    if (mod::module_by_id<bool>(id::show_hitboxes))
+    {
+        kmGLPushMatrix();
+
+        gameLayer->transform(); 
+        drawHitboxes(self);
+        
+        kmGLPopMatrix();
+    }
+}
+#endif
 
 bool (*PlayLayer_init)(PlayLayer*, GJGameLevel*);
 bool PlayLayer_init_H(PlayLayer* self, GJGameLevel* lvl)
@@ -374,12 +421,36 @@ bool PlayLayer_init_H(PlayLayer* self, GJGameLevel* lvl)
 
     rbot::getModules().gameStarted = false;
     
-    MEMBER_BY_OFFSET(CCLayer*, self, PlayLayer__m_gameLayer)->addChild(PlayHitboxLayer::create(self), 9999);
+    // MEMBER_BY_OFFSET(CCLayer*, self, PlayLayer__m_gameLayer)->addChild(HitboxLayer::create(self), 9999);
+
+#if GAME_VERSION < V1P4
+    if (!PlayLayer_visit_t)
+    {
+#if GAME_VERSION < V1P7
+        void** vtable = *(void***)self;
+        void (PlayLayer::* ptr)() = &PlayLayer::visit;
+        void* offset = *(void**)&ptr;
+
+        auto index = ((uintptr_t)offset) / sizeof(void*);
+        PlayLayer_visit_t = reinterpret_cast<void(*)(PlayLayer*)>(vtable[index]);
+#if GAME_VERSION < V1P5
+        vtable[((uintptr_t)offset)/sizeof(void*)] = (void*)&PlayLayer_visit;
+#else
+        DobbyCodePatch(&vtable[((uintptr_t)offset)/sizeof(void*)], uintptrToBytes((uintptr_t)&PlayLayer_visit).data(), 4);
+#endif
+#else
+        DobbyCodePatch(reinterpret_cast<void*>(get_address(__PlayLayer_visit)),
+        uintptrToBytes((uintptr_t)&PlayLayer_visit).data(), 4);
+#endif
+    }
+#endif
+
     self->toggleLayoutMode(LAYOUT_CHECK);
     
     return true;
 }
 
+#if GAME_VERSION > V1P3
 void (*PlayLayer_visit)(PlayLayer*);
 void PlayLayer_visit_H(PlayLayer* self)
 {
@@ -396,6 +467,7 @@ void PlayLayer_visit_H(PlayLayer* self)
         kmGLPopMatrix();
     }
 }
+#endif
 
 void (*PlayLayer_toggleFlipped)(PlayLayer*, bool, bool);
 void PlayLayer_toggleFlipped_H(PlayLayer* self, bool direction, bool doFlip)
@@ -406,8 +478,10 @@ void PlayLayer_toggleFlipped_H(PlayLayer* self, bool direction, bool doFlip)
 bool (*UILayer_ccTouchBegan)(UILayer*, CCTouch*, CCEvent*);
 bool UILayer_ccTouchBegan_H(UILayer* self, CCTouch* touch, CCEvent* event)
 {
-    UILayer_ccTouchBegan(self, touch, event);
-    auto m = rbot::getModules();
+    auto b = UILayer_ccTouchBegan(self, touch, event);
+    if (!b) return false;
+
+    auto& m = rbot::getModules();
     if(m.mode == Modes::kModeRecording)
     {
         m.usedFrame->click = true;
@@ -421,22 +495,59 @@ bool UILayer_ccTouchBegan_H(UILayer* self, CCTouch* touch, CCEvent* event)
     return true;
 }
 
+void (*UILayer_ccTouchEnded)(UILayer*, CCTouch*, CCEvent*);
+void UILayer_ccTouchEnded_H(UILayer* self, CCTouch* touch, CCEvent* event)
+{
+    UILayer_ccTouchEnded(self, touch, event);
+    auto& m = rbot::getModules();
+    if(m.mode == Modes::kModeRecording)
+    {
+        m.usedFrame->release = true;
+    }
+
+    if(m.mode != Modes::kModePlaying && mod::module_by_id<bool>(id::click_sounds))
+    {
+        auto sound = GameSoundManager::sharedManager();
+        sound->playEffect(m.releasePath.c_str(), 1, 0, 1);
+    }
+}
+
 void PlayLayer::toggleLayoutMode(bool enabled)
 {
+    auto& m = rbot::getModules();
     auto objects = MEMBER_BY_OFFSET(CCArray*, this, PlayLayer__m_objects);
 
-    for(int i = 0 ; i < objects->count() ; i++)
+    auto camX = MEMBER_BY_OFFSET(CCPoint, this, PlayLayer__m_cameraPos).x;
+    auto startSection = std::max(0, static_cast<int>((camX - 300.0f) / 100.0f));
+    auto endSection = std::min(static_cast<int>(objects->count()) - 1, static_cast<int>((camX + 900) / 100));
+
+    if (!enabled && m.lastLayoutState)
     {
-        auto section = (CCArray*)objects->objectAtIndex(i);
-        for(int j = 0 ; j < section->count() ; j++)
+        startSection = 0;
+        endSection = static_cast<int>(objects->count()) - 1;
+    }
+
+    if (enabled || m.lastLayoutState)
+    {
+        for (int i = startSection ; i <= endSection ; i++)
         {
-            auto obj = (GameObject*)section->objectAtIndex(j);
-            int type = MEMBER_BY_OFFSET(int, obj, GameObject__m_type);
-            if(type == 7 || type == 8) obj->setVisible(!enabled);
+            auto section = static_cast<CCArray*>(objects->objectAtIndex(i));
+            auto count = section->count();
+
+            for (int j = 0 ; j < count ; j++)
+            {
+                if (dynamic_cast<CheckpointObject*>(section->objectAtIndex(j))) continue;
+
+                auto obj = static_cast<GameObject*>(section->objectAtIndex(j));
+                auto type = MEMBER_BY_OFFSET(int, obj, GameObject__m_type);
+                
+                if (((type == 7 || type == 8) && MEMBER_BY_OFFSET(int, obj, GameObject__m_key) != 44) && obj->isVisible() == enabled)
+                    obj->setVisible(!enabled);
+            }
         }
     }
 
-    if(enabled)
+    if(enabled && !m.lastLayoutState)
     {
         this->tintBackground(ccc3(0,102,255), 0);
         this->tintGround(ccc3(0,102,255), 0);
@@ -504,13 +615,12 @@ void bot_hook()
     HOOK("_ZN9PlayLayer8tintLineEN7cocos2d10_ccColor3BEf", PlayLayer_tintLine_H, PlayLayer_tintLine); // 1.4
     HOOK("_ZN9PlayLayer10tintGroundEN7cocos2d10_ccColor3BEf", PlayLayer_tintGround_H, PlayLayer_tintGround); // 1.0
     HOOK("_ZN9PlayLayer14tintBackgroundEN7cocos2d10_ccColor3BEf", PlayLayer_tintBackground_H, PlayLayer_tintBackground); // 1.0
-
+    HOOK("_ZN7UILayer12ccTouchEndedEPN7cocos2d7CCTouchEPNS0_7CCEventE", UILayer_ccTouchEnded_H, UILayer_ccTouchEnded);
     HOOK("_ZN7UILayer12ccTouchBeganEPN7cocos2d7CCTouchEPNS0_7CCEventE", UILayer_ccTouchBegan_H, UILayer_ccTouchBegan);
-    #if GAME_VERSION == V1P8
+#if GAME_VERSION > V1P3
     HOOK("_ZN9PlayLayer5visitEv", PlayLayer_visit_H, PlayLayer_visit);
-    #else
+#endif
     HOOK("_ZN9PlayLayer4initEP11GJGameLevel", PlayLayer_init_H, PlayLayer_init);
-    #endif
     HOOK("_ZN9PlayLayer13toggleFlippedEbb", PlayLayer_toggleFlipped_H, PlayLayer_toggleFlipped);
     HOOK("_ZN7cocos2d11CCScheduler6updateEf", CCScheduler_update_H, CCScheduler_update);
     HOOK("_ZN9PlayLayer18loadLastCheckpointEv", PlayLayer_loadLastCheckpoint_H, PlayLayer_loadLastCheckpoint);

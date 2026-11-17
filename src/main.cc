@@ -2,6 +2,7 @@
 #include "features/bot.cpp"
 #include "features/levelcomplete.cpp"
 #include "features/savefile.cpp"
+#include "features/inputs.cpp"
 #include <jni.h>
 #include "init.hpp"
 #include "save.hpp"
@@ -11,6 +12,7 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     button_hook();
     bot_hook();
     levelcomplete_hook();
+    inputs_hook();
     // savefile_hook();
 
     mod::init();

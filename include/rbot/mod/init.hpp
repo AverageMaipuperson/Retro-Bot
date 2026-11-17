@@ -173,6 +173,15 @@ namespace mod
             false
         );
 
+        mod::module<bool>(
+            id::fast_menu,
+            category::menu_page_2,
+            "Fast Menu",
+            "Disables animations in the mod menu.",
+            false,
+            false
+        );
+
 
 
 

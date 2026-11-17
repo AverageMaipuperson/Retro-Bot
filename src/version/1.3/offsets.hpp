@@ -21,6 +21,7 @@
 #define PlayerObject__m_yVelocity         0x378  // PlayerObject::hitGround (first line)
 #define PlayerObject__m_onGround          0x430  // PlayerObject::getOnGround
 #define PlayerObject__m_groundParticleOff 0x36d  // PlayerObject::deactivateParticle
+#define PlayerObject__m_unk               0x370  // PlayerObject::playerDestroyed
 
 ///////////////////////////////////////////////////////
 /*                  CCTextInputNode                  */
@@ -50,3 +51,4 @@
 
 #define pause_restart_button           0x159368  // PauseLayer::customSetup
 #define level_flip                     0x1496EE  // PlayLayer::toggleFlipped if(param_1)
+#define __PlayLayer_visit              0x415020  // PlayLayer::vtable

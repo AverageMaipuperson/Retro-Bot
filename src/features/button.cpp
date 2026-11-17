@@ -44,6 +44,8 @@ bool ButtonSprite_init_H(ButtonSprite* self, char const* t, int w, int h, float 
 
 void button_hook()
 {
+#if GAME_VERSION < GV_1_5
     HOOK("_ZN12ButtonSprite4initEPKciifbS1_S1_f", ButtonSprite_init_H, ButtonSprite_init);
+#endif
     HOOK("_ZN10PauseLayer11customSetupEv", PauseLayer_customSetup_H, PauseLayer_customSetup);
 }

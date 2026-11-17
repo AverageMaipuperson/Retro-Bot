@@ -14,6 +14,7 @@
 #include "save.hpp"
 #include <iostream>
 #include "ClickLoader.hpp"
+#include "CCMenuItemExt.h"
 
 #define MACRO_TAG 679999
 #define SETTINGS_TAG 4804376
@@ -33,6 +34,8 @@ RBotLayer* RBotLayer::create(PauseLayer* parent)
 
 void RBotLayer::toggle(CCObject* sender)
 {
+    auto& m = rbot::getModules();
+
     auto btn = static_cast<CCMenuItemToggler*>(sender);
     bool* toggleVar = static_cast<bool*>(btn->getUserData());
     if(toggleVar) *toggleVar = !*toggleVar;
@@ -40,9 +43,27 @@ void RBotLayer::toggle(CCObject* sender)
     {
         case 1000:
             m_playToggler->toggle(false);
+
+            if (!m_recordToggler->isEnabled())
+            {
+                m.mode = kModeNone;
+                m.recording = false;
+                m.playing = false;
+            }
+
+            m.mode = kModeRecording;
             break;
         case 1001:
             m_recordToggler->toggle(false);
+
+            if (!m_playToggler->isEnabled())
+            {
+                m.mode = kModeNone;
+                m.recording = false;
+                m.playing = false;
+            }
+
+            m.mode = kModePlaying;
             break;
     }
 }
@@ -85,7 +106,7 @@ CCNode* RBotLayer::togglerFromModule(const Module& m)
         }
     );
 
-    if(val) static_cast<CCMenuItemToggler*>(btn->getWrapper())->toggle(true);
+    if(val) btn->toggle(true);
     btn->setAnchorPoint(ccp(0, 0.5f));
     btn->setScale(0.8f);
 
@@ -104,7 +125,8 @@ CCNode* RBotLayer::togglerFromModule(const Module& m)
     container->addChild(menu, 10);
     menu->ignoreAnchorPointForPosition(false);
 
-    if(!m.description.empty()) {
+    if(!m.description.empty())
+    {
         auto spr = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
         spr->setScale(0.4f);
         auto infoBtn = CCMenuItemExt::createWithSpriteExtra(
@@ -127,7 +149,7 @@ CCNode* RBotLayer::togglerFromModule(const Module& m)
     return container;
 }
 
-CCMenuItemExt* RBotLayer::createSideButton(char const* text, const CCMenuItemExt::Callback& callback)
+CCMenuItemToggler* RBotLayer::createSideButton(char const* text, const CCMenuItemExt::Callback& callback)
 {
     auto on = ButtonSprite::create(
         text, 
@@ -160,10 +182,10 @@ CCMenuItemExt* RBotLayer::createSideButton(char const* text, const CCMenuItemExt
 
 void RBotLayer::turnOffSideButtons()
 {
-    for(auto btn : std::vector<CCMenuItemExt*>{m_macroToggler, m_settingsToggler, m_aboutToggler})
+    for(auto btn : std::vector<CCMenuItemToggler*>{m_macroToggler, m_settingsToggler, m_aboutToggler})
     {
-        static_cast<CCMenuItemToggler*>(btn->getWrapper())->toggle(false);
-        static_cast<CCMenuItemToggler*>(btn->getWrapper())->setEnabled(true);
+        btn->toggle(false);
+        btn->setEnabled(true);
     }
 
     for(auto layer : std::vector<CCLayer*>{m_macroPage, m_settingsPage, m_aboutPage})
@@ -176,6 +198,7 @@ void RBotLayer::turnOffSideButtons()
 bool RBotLayer::init()
 {
     auto winSize = CCDirector::sharedDirector()->getWinSize();
+    RBotAlertLayer::init({0, 0, winSize.width - 75, winSize.height - 25});
     rbot::getModules().rbotOpened = true;
 
     m_aboutPage = CCLayer::create();
@@ -188,67 +211,17 @@ bool RBotLayer::init()
     m_settingsPage2->setVisible(false);
     m_aboutPage->setVisible(false);
 
-    auto pivot = CCNode::create();
-    pivot->setPosition(ccp(winSize.width/2, winSize.height/2));
-    this->addChild(pivot);
-
-    auto contentHolder = CCLayer::create();
-    contentHolder->setPosition(ccp(-winSize.width/2, -winSize.height/2));
-    m_mainLayer = contentHolder;
-
-    pivot->addChild(contentHolder);
-    pivot->setScale(0.1f);
-
-    auto scaleUp = CCScaleTo::create(0.5f, 1.0f);
-    auto ease = CCEaseElasticOut::create(scaleUp, 0.5f);
-    pivot->runAction(ease);
-
-    auto leftParent = CCNode::create();
-    leftParent->setPosition(winSize.width / 2, winSize.height / 2);
-
-    auto overlay = CCLayerColor::create(
-        ccc4(0, 0, 0, 127),
-        winSize.width,
-        winSize.height
-    );
-    overlay->setPosition(ccp(0,0));
-
-    contentHolder->addChild(overlay);
-    contentHolder->addChild(leftParent);
-    contentHolder->addChild(m_macroPage);
-    contentHolder->addChild(m_settingsPage);
-    contentHolder->addChild(m_aboutPage);
+    m_mainLayer->addChild(m_macroPage);
+    m_mainLayer->addChild(m_settingsPage);
+    m_mainLayer->addChild(m_aboutPage);
 
     initAbout();
     initMacro();
     initSettings();
     initSideButtons();
 
-    CCRect rect = CCRectMake(0, 0, 80, 80);
-    cocos2d::extension::CCScale9Sprite* panel = cocos2d::extension::CCScale9Sprite::create("rbot_square.png", rect);
-    panel->setContentSize(CCSizeMake(winSize.width - 75, winSize.height - 25));
-    leftParent->addChild(panel);
-    panel->setPosition(ccp(0,0));
-
-    auto menu = CCMenu::create();
-    auto spr = CCSprite::create("rbot_close.png");
-    CCMenuItemSpriteExtra* btn = CCMenuItemSpriteExtra::create(spr, spr, this, menu_selector(RBotLayer::keyBackClicked));
-    btn->setPosition({-50,-25});
-    menu->setPosition({winSize.width, winSize.height});
-    menu->addChild(btn);
-    contentHolder->addChild(menu, 100);
-
-    CCLog("1");
-
-    CCArray* childrenself = this->m_parent->getChildren(); 
-
-    CCObject* pObj = NULL;
-    CCARRAY_FOREACH(childrenself, pObj)
-    {
-        CCMenu* menu = dynamic_cast<CCMenu*>(pObj);
-        if (menu) menu->setEnabled(false);
-    }
     this->setKeypadEnabled(true);
+    this->setTouchEnabled(true);
     return true;
 }
 
@@ -307,20 +280,67 @@ void RBotLayer::initAbout()
 void RBotLayer::initMacro()
 {
     auto winSize = CCDirector::sharedDirector()->getWinSize();
+    auto& m = rbot::getModules();
 
     auto macroMenu = CCMenu::create();
     macroMenu->setPosition(CCPointZero);
     m_macroPage->addChild(macroMenu);
 
-    auto recordToggler = Toggler::create("Record", &rbot::getModules().recording, this, menu_selector(RBotLayer::toggle), 1000);
-    m_recordToggler = recordToggler;
-    recordToggler->setPosition(ccp(winSize.width / 2 - 90, winSize.height / 2));
-    m_macroPage->addChild(recordToggler, 100000);
+    auto on = CCSprite::create("rbot_toggleOn.png");
+    on->setScale(.5f);
+    auto off = CCSprite::create("rbot_toggleOff.png");
+    off->setScale(.5f);
 
-    auto playToggler = Toggler::create("Play", &rbot::getModules().playing, this, menu_selector(RBotLayer::toggle), 1001);
+    auto recordToggler = CCMenuItemExt::createWithToggler(
+        off,
+        on,
+        [this, macroMenu](CCObject*)
+        {
+            auto& m = rbot::getModules();
+            auto recordToggler = static_cast<CCMenuItemToggler*>(macroMenu->getChildByTag(10000));
+            auto playToggler = static_cast<CCMenuItemToggler*>(macroMenu->getChildByTag(10001));
+
+            playToggler->toggle(false);
+            if (recordToggler->getIsActive()) m.mode = kModeNone;
+            else m.mode = kModeRecording;
+        }
+    );
+    m_recordToggler = recordToggler;
+    recordToggler->setPosition(ccp(winSize.width / 2 - 80, winSize.height / 2));
+    recordToggler->toggle(m.mode == kModeRecording);
+    macroMenu->addChild(recordToggler, 100000, 10000);
+
+    auto label = CCLabelBMFont::create("Record", "BoonBoldItalic.fnt");
+    label->setPosition(ccp(winSize.width / 2 - 40, winSize.height / 2));
+    m_macroPage->addChild(label);
+
+    on = CCSprite::create("rbot_toggleOn.png");
+    on->setScale(.5f);
+    off = CCSprite::create("rbot_toggleOff.png");
+    off->setScale(.5f);
+
+    auto playToggler = CCMenuItemExt::createWithToggler(
+        off,
+        on,
+        [this, macroMenu](CCObject*)
+        {
+            auto& m = rbot::getModules();
+            auto recordToggler = static_cast<CCMenuItemToggler*>(macroMenu->getChildByTag(10000));
+            auto playToggler = static_cast<CCMenuItemToggler*>(macroMenu->getChildByTag(10001));
+
+            recordToggler->toggle(false);
+            if (playToggler->getIsActive()) m.mode = kModeNone;
+            else m.mode = kModePlaying;
+        }
+    );
     m_playToggler = playToggler;
-    playToggler->setPosition(ccp(winSize.width / 2 + 90, winSize.height / 2));
-    m_macroPage->addChild(playToggler, 100000);
+    playToggler->setPosition(ccp(winSize.width / 2 + 80, winSize.height / 2));
+    playToggler->toggle(m.mode == kModePlaying);
+    macroMenu->addChild(playToggler, 100000, 10001);
+
+    label = CCLabelBMFont::create("Play", "BoonBoldItalic.fnt");
+    label->setPosition(ccp(winSize.width / 2 + 115, winSize.height / 2));
+    m_macroPage->addChild(label);
 
     auto spr = ButtonSprite::create(
         "Clear Macro", 
@@ -484,7 +504,7 @@ void RBotLayer::initSettings()
     );
 
     spr = ButtonSprite::create(
-        "Load Sound", 100, 0, 1, false, "BoonBoldItalic.fnt", "rbot_btn01.png"
+        "Click Sound", 100, 0, 1, false, "BoonBoldItalic.fnt", "rbot_btn01.png"
     );
     spr->setScale(.75f);
 
@@ -492,15 +512,29 @@ void RBotLayer::initSettings()
         spr,
         [this](CCObject*)
         {
-            auto layer = ClickLoader::create(this);
+            auto layer = ClickLoader::create(this, false);
             this->addChild(layer, 10000);
         }
     );
-    soundBtn->setPosition(ccp(winSize.width / 2 - 60, winSize.height - 40));
-    soundBtn->setAnchorPoint(ccp(0, .5));
 
-    m_soundsMenu = CCMenu::create(soundBtn, NULL);
-    m_soundsMenu->setPosition(CCPointZero);
+    spr = ButtonSprite::create(
+        "Release Sound", 100, 0, 1, false, "BoonBoldItalic.fnt", "rbot_btn01.png"
+    );
+    spr->setScale(.75f);
+
+    auto releaseBtn = CCMenuItemExt::createWithSpriteExtra(
+        spr,
+        [this](CCObject*)
+        {
+            auto layer = ClickLoader::create(this, true);
+            layer->m_isRelease = true;
+            this->addChild(layer, 10000);
+        }
+    );
+
+    m_soundsMenu = CCMenu::create(soundBtn, releaseBtn, NULL);
+    m_soundsMenu->setPosition(ccp(winSize.width / 2, winSize.height - 40));
+    m_soundsMenu->alignItemsHorizontallyWithPadding(5);
     m_settingsPage1->addChild(m_soundsMenu);
 
     if(mod::module_by_id<bool>(id::click_sounds))
@@ -589,8 +623,8 @@ void RBotLayer::initSideButtons()
         [this](CCObject*)
         {
             this->turnOffSideButtons();
-            static_cast<CCMenuItemToggler*>(m_macroToggler->getWrapper())->toggle(true);
-            static_cast<CCMenuItemToggler*>(m_macroToggler->getWrapper())->setEnabled(false);
+            m_macroToggler->toggle(true);
+            m_macroToggler->setEnabled(false);
 
             m_macroPage->setVisible(true);
             setChildrenEnabled(m_macroPage, true);
@@ -602,8 +636,8 @@ void RBotLayer::initSideButtons()
         [this](CCObject*)
         {
             this->turnOffSideButtons();
-            static_cast<CCMenuItemToggler*>(m_settingsToggler->getWrapper())->toggle(true);
-            static_cast<CCMenuItemToggler*>(m_settingsToggler->getWrapper())->setEnabled(false);
+            m_settingsToggler->toggle(true);
+            m_settingsToggler->setEnabled(false);
 
             m_settingsPage->setVisible(true);
             setChildrenEnabled(m_settingsPage, true);
@@ -615,16 +649,16 @@ void RBotLayer::initSideButtons()
         [this](CCObject*)
         {
             this->turnOffSideButtons();
-            static_cast<CCMenuItemToggler*>(m_aboutToggler->getWrapper())->toggle(true);
-            static_cast<CCMenuItemToggler*>(m_aboutToggler->getWrapper())->setEnabled(false);
+            m_aboutToggler->toggle(true);
+            m_aboutToggler->setEnabled(false);
 
             m_aboutPage->setVisible(true);
             setChildrenEnabled(m_aboutPage, true);
         }
     );
 
-    static_cast<CCMenuItemToggler*>(m_macroToggler->getWrapper())->toggle(true);
-    static_cast<CCMenuItemToggler*>(m_macroToggler->getWrapper())->setEnabled(false);
+    m_macroToggler->toggle(true);
+    m_macroToggler->setEnabled(false);
 
     auto menu = CCMenu::create(m_macroToggler, m_settingsToggler, m_aboutToggler, NULL);
     menu->alignItemsVerticallyWithPadding(5);
@@ -652,13 +686,6 @@ void RBotLayer::FLAlert_Clicked(FLAlertLayer*, bool btn2)
 }
 
 void RBotLayer::keyBackClicked() {
-    CCArray* childrenself = this->m_parent->getChildren();
-
-    CCObject* pObj = NULL;
-    CCARRAY_FOREACH(childrenself, pObj)
-    {
-        if (auto menu = dynamic_cast<CCMenu*>(pObj)) menu->setEnabled(true); 
-    }
     #if GAME_VERSION < V1P7
     auto str = std::string(MEMBER_BY_OFFSET(CCTextFieldTTF*, this->m_textInput, CCTextInputNode__m_textField)->getString());
     #else
@@ -673,8 +700,6 @@ void RBotLayer::keyBackClicked() {
 
     mod_map[id::speedhack_val] = f;
 
-    if(rbot::getModules().playing) rbot::getModules().mode = Modes::kModePlaying;
-    else if(rbot::getModules().recording) rbot::getModules().mode = Modes::kModeRecording;
     rbot::getModules().rbotOpened = false;
     this->removeFromParentAndCleanup(true);
     mod::save();

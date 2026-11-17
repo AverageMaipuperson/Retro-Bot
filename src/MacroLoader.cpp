@@ -35,23 +35,18 @@ std::vector<Frame> MacroLoader::readJson(char const* jsonContent)
     rapidjson::Document document;
 
     document.Parse<rapidjson::kParseFullPrecisionFlag>(jsonContent);
-
     if (!document.IsObject()) return frames;
 
     for (auto it = document.MemberBegin(); it != document.MemberEnd(); ++it)
     {
-        const rapidjson::Value& obj = it->value;
+        rapidjson::Value& obj = it->value;
 
         Frame frame;
         char* ptr;
         
         frame.frame = std::strtod(it->name.GetString(), &ptr);
-        
-        frame.position.x = static_cast<float>(obj["x"].GetDouble());
-        frame.position.y = static_cast<float>(obj["y"].GetDouble());
-        frame.rotation = static_cast<float>(obj["rot"].GetDouble());
-        frame.flipY = static_cast<float>(obj["flip"].GetDouble());
         frame.click = static_cast<bool>(obj["click"].GetBool());
+        frame.release = static_cast<bool>(obj["release"].GetBool());
 
         frames.push_back(frame);
     }
@@ -132,62 +127,20 @@ std::vector<File> MacroLoader::getMacros()
 bool MacroLoader::init() 
 {
     auto winSize = CCDirector::sharedDirector()->getWinSize();
-    auto pivot = CCNode::create();
-    pivot->setPosition(ccp(winSize.width/2, winSize.height/2));
-    this->addChild(pivot);
-    auto contentHolder = CCNode::create();
-    contentHolder->setPosition(ccp(-winSize.width/2, -winSize.height/2));
-    pivot->addChild(contentHolder);
-    pivot->setScale(0.1f);
-    auto scaleUp = CCScaleTo::create(0.5f, 1.0f);
-    auto ease = CCEaseElasticOut::create(scaleUp, 0.5f);
-    pivot->runAction(ease);
+    RBotAlertLayer::init({0, 0, winSize.width - 75, winSize.height - 25});
 
-    auto leftParent = CCNode::create();
-    CCLayerColor *overlay = CCLayerColor::create(
-        ccc4(0, 0, 0, 127),
-        winSize.width,
-        winSize.height
-    );
-    overlay->setPosition(0,0);
-    contentHolder->addChild(overlay);
-    contentHolder->addChild(leftParent);
-    leftParent->setPosition(winSize.width / 2, winSize.height / 2);
-
-    CCRect rect = CCRectMake(0, 0, 80, 80);
-    cocos2d::extension::CCScale9Sprite* panel = cocos2d::extension::CCScale9Sprite::create("rbot_square.png", rect);
-    panel->setContentSize(CCSizeMake(winSize.width - 75, winSize.height - 25));
-    leftParent->addChild(panel);
-    panel->setPosition({0.f, 0.f});
-
-    auto menu = CCMenu::create();
-    auto spr = CCSprite::create("rbot_close.png");
-    auto btn = CCMenuItemSpriteExtra::create(spr, spr, this, menu_selector(MacroLoader::keyBackClicked));
-    btn->setPosition({-50,-25});
-    menu->setPosition({winSize.width, winSize.height});
-    menu->addChild(btn);
-    contentHolder->addChild(menu, 100);
-
-    CCArray* childrenself = this->m_parent->getChildren(); 
-
-    CCObject* pObj = NULL;
-    CCARRAY_FOREACH(childrenself, pObj) {
-    CCMenu* menu = dynamic_cast<CCMenu*>(pObj);
-        if (menu) menu->setEnabled(false); 
-    }
-
-    int y = 0;
-    int i = 0;
-    m_mainLayer = CCLayer::create();
-
+    auto y = 0;
+    auto i = 0;
     m_files = getMacros();
+    m_container = CCLayer::create();
+    m_mainLayer->addChild(m_container);
+
     for (const auto& file : m_files)
     {
         if(i > 5) break;
-        panel = cocos2d::extension::CCScale9Sprite::create("rbot_square.png", {0,0,80,80});
+        auto panel = cocos2d::extension::CCScale9Sprite::create("rbot_square.png", {0,0,80,80});
         panel->setContentSize(CCSizeMake(winSize.width / 2, 40));
         panel->setPosition(ccp(winSize.width / 2, winSize.height - 50 - y));
-        panel->setOpacity(127);
 
         auto label = CCLabelBMFont::create(file.name.c_str(), "BoonBoldItalic.fnt");
         limitLabelWidth(label, 200);
@@ -223,14 +176,12 @@ bool MacroLoader::init()
         menu->setPosition(ccp(panel->getContentSize().width - 40, 20));
         
         panel->addChild(menu);
-        m_mainLayer->addChild(panel);
+        m_container->addChild(panel);
         y += 45;
         i++;
     }
 
-    contentHolder->addChild(m_mainLayer);
-
-    spr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
+    auto spr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
     spr->setFlipX(true);
     auto btn_ext = CCMenuItemExt::createWithSpriteExtra(
         spr,
@@ -240,7 +191,7 @@ bool MacroLoader::init()
         }
     );
     btn_ext->setPosition(ccp(winSize.width / 2 - 70, 0));
-    menu = CCMenu::create(btn_ext, NULL);
+    auto menu = CCMenu::create(btn_ext, NULL);
 
     spr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
     btn_ext = CCMenuItemExt::createWithSpriteExtra(
@@ -252,11 +203,8 @@ bool MacroLoader::init()
     );
     btn_ext->setPosition(ccp(-winSize.width / 2 + 70, 0));
     menu->addChild(btn_ext);
-    contentHolder->addChild(menu);
+    m_mainLayer->addChild(menu);
 
-    this->setKeypadEnabled(true);
-    this->setTouchEnabled(true);
-    setAllMenusEnabled(m_parent, false);
     return true;
 }
 
@@ -266,14 +214,14 @@ void MacroLoader::changePage(int page)
     if (m_mainLayer && page > -1 && page < pages)
     {
         m_page = page;
-        m_mainLayer->removeAllChildrenWithCleanup(true);
+        m_container->removeAllChildrenWithCleanup(true);
 
         auto winSize = CCDirector::sharedDirector()->getWinSize();
-        int y = 0;
+        auto y = 0;
 
         // std::reverse(m_files.begin(), m_files.end());
-        int start_index = page * 6;
-        int end_index = std::min(start_index + 6, static_cast<int>(m_files.size()));
+        auto start_index = page * 6;
+        auto end_index = std::min(start_index + 6, static_cast<int>(m_files.size()));
 
         for (int i = page * 6 ; i < end_index ; i++)
         {
@@ -283,7 +231,6 @@ void MacroLoader::changePage(int page)
             auto panel = cocos2d::extension::CCScale9Sprite::create("rbot_square.png", {0,0,80,80});
             panel->setContentSize(CCSizeMake(winSize.width / 2, 40));
             panel->setPosition(ccp(winSize.width / 2, winSize.height - 50 - y));
-            panel->setOpacity(127);
 
             auto label = CCLabelBMFont::create(file.name.c_str(), "BoonBoldItalic.fnt");
             limitLabelWidth(label, 200);
@@ -319,7 +266,7 @@ void MacroLoader::changePage(int page)
             menu->setPosition(ccp(panel->getContentSize().width - 40, 20));
         
             panel->addChild(menu);
-            m_mainLayer->addChild(panel);
+            m_container->addChild(panel);
             y += 45;
         }
     }
@@ -328,9 +275,4 @@ void MacroLoader::changePage(int page)
 void MacroLoader::FLAlert_Clicked(FLAlertLayer* alert, bool btn2)
 {
     if(btn2) this->loadFile(m_files[alert->getTag()].path.c_str());
-}
-
-void MacroLoader::keyBackClicked() {
-    setAllMenusEnabled(m_parent, true);
-    this->removeFromParentAndCleanup(true);
 }

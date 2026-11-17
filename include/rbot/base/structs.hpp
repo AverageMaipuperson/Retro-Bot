@@ -24,6 +24,8 @@ struct CheckpointData {
     double yVelocity;
     double gravity;
     double rotation;
+    CCPoint position;
+    float unk;
 };
 
 struct PlayerHitbox {
@@ -47,12 +49,14 @@ struct Modules {
     bool stepperOn;
     bool paused;
     std::string soundPath;
+    std::string releasePath;
     bool isClicking;
     Frame* usedFrame;
     std::vector<PlayerHitbox> playerHitboxes;
     bool gameStarted;
     bool rbotOpened;
     CCMenuItemExt* speedhackBtn;
+    bool lastLayoutState;
 };
 
 struct File

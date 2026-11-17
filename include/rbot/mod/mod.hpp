@@ -18,7 +18,8 @@ enum id
     click_sound_path,
     no_death_effect,
     layout_mode,
-    hitbox_trail
+    hitbox_trail,
+    fast_menu
 };
 
 enum category

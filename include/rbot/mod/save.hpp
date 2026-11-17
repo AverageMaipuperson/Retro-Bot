@@ -49,6 +49,11 @@ namespace mod
         std::ofstream dst2("/storage/emulated/0/rbot/json/soundPath.txt");
         dst2 << str;
         dst2.close();
+
+        str = rbot::getModules().releasePath.c_str();
+        std::ofstream dst3("/storage/emulated/0/rbot/json/releasePath.txt");
+        dst3 << str;
+        dst3.close();
     }
 
     inline void load()
@@ -93,6 +98,15 @@ namespace mod
             std::stringstream buffer;
             buffer << src2.rdbuf();
             rbot::getModules().soundPath = std::string(buffer.str());
+        }
+
+        path = "/storage/emulated/0/rbot/json/releasePath.txt";
+        std::ifstream src3(path);
+        if (src3.is_open())
+        {
+            std::stringstream buffer;
+            buffer << src3.rdbuf();
+            rbot::getModules().releasePath = std::string(buffer.str());
         }
     }
 }

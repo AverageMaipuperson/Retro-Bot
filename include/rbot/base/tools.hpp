@@ -144,3 +144,15 @@ inline bool exists(const std::string& name)
     std::ifstream f(name.c_str());
     return f.good();
 }
+
+// taken from omnimenu
+inline std::vector<uint8_t> uintptrToBytes(uintptr_t value) {
+    std::vector<uint8_t> bytes(sizeof(uintptr_t));
+
+    for (size_t i = 0; i < bytes.size(); ++i) {
+        // Little-endian: extract least significant byte first
+        bytes[i] = static_cast<uint8_t>((value >> (8 * i)) & 0xFF);
+    }
+
+    return bytes;
+}

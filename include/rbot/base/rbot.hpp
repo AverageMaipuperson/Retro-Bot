@@ -39,6 +39,6 @@ public:
 
     static std::string getVersion()
     {
-        return "0.93 beta";
+        return "0.94 beta";
     }
 };

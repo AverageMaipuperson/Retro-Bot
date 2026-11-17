@@ -15,10 +15,10 @@
 #define MEMBER_BY_OFFSET(type, var, offset) \
     (*reinterpret_cast<type*>(reinterpret_cast<uintptr_t>(var) + static_cast<uintptr_t>(offset)))
 
-ClickLoader* ClickLoader::create(RBotLayer* parent) {
+ClickLoader* ClickLoader::create(RBotLayer* parent, bool isRelease) {
     auto ret = new ClickLoader();
     ret->m_parent = parent;
-    if (ret && ret->init()) {
+    if (ret && ret->init(isRelease)) {
         ret->autorelease();
         return ret;
     }
@@ -56,65 +56,22 @@ std::vector<File> ClickLoader::getFiles()
     return vector;
 }
 
-bool ClickLoader::init() 
+bool ClickLoader::init(bool isRelease) 
 {
     auto winSize = CCDirector::sharedDirector()->getWinSize();
-    auto pivot = CCNode::create();
-    pivot->setPosition(ccp(winSize.width/2, winSize.height/2));
-    this->addChild(pivot);
-    auto contentHolder = CCNode::create();
-    contentHolder->setPosition(ccp(-winSize.width/2, -winSize.height/2));
-    pivot->addChild(contentHolder);
-    pivot->setScale(0.1f);
-    auto scaleUp = CCScaleTo::create(0.5f, 1.0f);
-    auto ease = CCEaseElasticOut::create(scaleUp, 0.5f);
-    pivot->runAction(ease);
-
-    auto leftParent = CCNode::create();
-    CCLayerColor *overlay = CCLayerColor::create(
-        ccc4(0, 0, 0, 127),
-        winSize.width,
-        winSize.height
-    );
-    overlay->setPosition(0,0);
-    contentHolder->addChild(overlay);
-    contentHolder->addChild(leftParent);
-    leftParent->setPosition(winSize.width / 2, winSize.height / 2);
-
-    CCRect rect = CCRectMake(0, 0, 80, 80);
-    cocos2d::extension::CCScale9Sprite* panel = cocos2d::extension::CCScale9Sprite::create("rbot_square.png", rect);
-    panel->setContentSize(CCSizeMake(winSize.width - 75, winSize.height - 25));
-    leftParent->addChild(panel);
-    panel->setPosition({0.f, 0.f});
-
-    auto menu = CCMenu::create();
-    auto spr = CCSprite::create("rbot_close.png");
-    auto btn = CCMenuItemSpriteExtra::create(spr, spr, this, menu_selector(ClickLoader::keyBackClicked));
-    btn->setPosition({-50,-25});
-    menu->setPosition({winSize.width, winSize.height});
-    menu->addChild(btn);
-    contentHolder->addChild(menu, 100);
-
-    CCArray* childrenself = this->m_parent->getChildren(); 
-
-    CCObject* pObj = NULL;
-    CCARRAY_FOREACH(childrenself, pObj) {
-    CCMenu* menu = dynamic_cast<CCMenu*>(pObj);
-        if (menu) menu->setEnabled(false); 
-    }
-
-    int y = 0;
-    int i = 0;
-    m_mainLayer = CCLayer::create();
+    RBotAlertLayer::init({0, 0, winSize.width - 75, winSize.height - 25});
+    m_isRelease = isRelease;
+    auto y = 0;
+    auto i = 0;
 
     m_files = getFiles();
     for (const auto& file : m_files)
     {
         if(i > 5) break;
-        panel = cocos2d::extension::CCScale9Sprite::create("rbot_square.png", {0,0,80,80});
+        auto panel = cocos2d::extension::CCScale9Sprite::create("rbot_square.png", {0,0,80,80});
         panel->setContentSize(CCSizeMake(winSize.width / 2, 40));
         panel->setPosition(ccp(winSize.width / 2, winSize.height - 50 - y));
-        panel->setOpacity(127);
+        // panel->setOpacity(127);
 
         auto label = CCLabelBMFont::create(file.name.c_str(), "BoonBoldItalic.fnt");
         limitLabelWidth(label, 200);
@@ -187,19 +144,25 @@ bool ClickLoader::init()
 
         container->addChild(spr);
         container->addChild(spr2);
+    
+        auto callback = [this, file, spr, spr2](CCObject*)
+        {
+            if (m_isRelease)
+                rbot::getModules().releasePath = file.path;
+            else
+                rbot::getModules().soundPath = file.path;
+
+            spr->setVisible(false);
+            spr2->setVisible(true);
+        };
 
         btn = CCMenuItemExt::createWithSpriteExtra(
             container,
-            [this, file, spr, spr2](CCObject*)
-            {
-                rbot::getModules().soundPath = file.path;
-                spr->setVisible(false);
-                spr2->setVisible(true);
-            }
+            nullptr
         );
 
-        auto callback = btn->getTarget();
-        btn->setTarget(
+        CCMenuItemExt::setTarget(
+            btn,
             [btn, callback, this, file](CCObject* arg)
             {
                 for (const auto& container : m_useSprites)
@@ -225,7 +188,14 @@ bool ClickLoader::init()
         m_useSprites.push_back(container);
         m_useBtns.push_back(btn);
 
-        if (file.path == rbot::getModules().soundPath) {
+        if (!this->m_isRelease && file.path == rbot::getModules().soundPath)
+        {
+            spr->setVisible(false);
+            spr2->setVisible(true);
+            btn->setEnabled(false);
+        }
+        else if (this->m_isRelease && file.path == rbot::getModules().releasePath)
+        {
             spr->setVisible(false);
             spr2->setVisible(true);
             btn->setEnabled(false);
@@ -241,9 +211,7 @@ bool ClickLoader::init()
         i++;
     }
 
-    contentHolder->addChild(m_mainLayer);
-
-    spr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
+    auto spr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
     spr->setFlipX(true);
     auto btn_ext = CCMenuItemExt::createWithSpriteExtra(
         spr,
@@ -252,8 +220,8 @@ bool ClickLoader::init()
             this->changePage(m_page + 1);
         }
     );
-    btn_ext->setPosition(ccp(winSize.width / 2 - 70, 0));
-    menu = CCMenu::create(btn_ext, NULL);
+    btn_ext->setPosition(ccp(winSize.width - 70, winSize.height / 2));
+    m_mainMenu->addChild(btn_ext);
 
     spr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
     btn_ext = CCMenuItemExt::createWithSpriteExtra(
@@ -263,9 +231,8 @@ bool ClickLoader::init()
             this->changePage(m_page - 1);
         }
     );
-    btn_ext->setPosition(ccp(-winSize.width / 2 + 70, 0));
-    menu->addChild(btn_ext);
-    contentHolder->addChild(menu);
+    btn_ext->setPosition(ccp(70, winSize.height / 2));
+    m_mainMenu->addChild(btn_ext);
 
     spr = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
     spr->setScale(1.25f);
@@ -284,13 +251,11 @@ bool ClickLoader::init()
         }
     );
     infoBtn->setPosition(ccp(winSize.width - 45, 25));
-    menu = CCMenu::create(infoBtn, NULL);
-    menu->setPosition(CCPointZero);
-    contentHolder->addChild(menu);
+    m_mainMenu->addChild(infoBtn);
 
     this->setKeypadEnabled(true);
     this->setTouchEnabled(true);
-    setAllMenusEnabled(m_parent, false);
+
     return true;
 }
 
@@ -389,6 +354,5 @@ void ClickLoader::FLAlert_Clicked(FLAlertLayer* alert, bool btn2)
 }
 
 void ClickLoader::keyBackClicked() {
-    setAllMenusEnabled(m_parent, true);
     this->removeFromParentAndCleanup(true);
 }
