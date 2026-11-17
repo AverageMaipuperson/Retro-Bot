@@ -102,15 +102,7 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
     {
         if (modules.completed) rbot::stopMacro();
 
-        auto pos = MEMBER_BY_OFFSET(CCPoint, self, PlayLayer__m_realPosition);
-        if (MEMBER_BY_OFFSET(bool, self, PlayLayer__m_isFlipped))
-        {
-            auto winSize = CCDirector::sharedDirector()->getWinSize();
-            auto center = winSize.width / 2;
-            pos.x = (pos.x - center) + winSize.width - center;
-        }
-
-        modules.time += dt; // keep this consistent with playback
+        modules.time += dt;
         rbot::getFrameData().push_back({
             modules.time,
             getPlayer(self)->getScaleY(),
