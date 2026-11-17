@@ -102,6 +102,8 @@ void PlayLayer_update_H(PlayLayer* self, float dt)
     {
         if (modules.completed) rbot::stopMacro();
 
+        auto pos = MEMBER_BY_OFFSET(CCPoint, self, PlayLayer__m_realPosition);
+
         modules.time += dt;
         rbot::getFrameData().push_back({
             modules.time,
